@@ -1,0 +1,68 @@
+EBSMCP — Proprietary Software License
+Copyright (c) 2026 Nagendra Palla. All rights reserved.
+
+The contents of this repository (the "Software"), including the MCP server, the
+management API, the identity and audit services, and the admin console, are
+proprietary to and remain the exclusive property of the copyright holder
+("Licensor"). This is NOT open-source software, and no open-source license is
+granted.
+
+1. LIMITED GRANT.
+   Subject to this License, you are granted a limited, non-exclusive,
+   non-transferable, revocable right to view and read the source in this
+   repository solely for personal evaluation and reference.
+
+2. RESTRICTIONS.
+   Except as expressly authorized in a separate written agreement signed by the
+   Licensor, you may NOT:
+   (a) use, run, execute, or deploy the Software, in whole or in part, for any
+       purpose — including evaluation against your own data, development,
+       internal, production, or commercial use;
+   (b) copy, reproduce, modify, adapt, translate, or create derivative works;
+   (c) distribute, publish, sublicense, sell, rent, lease, lend, or otherwise
+       transfer the Software or any portion of it;
+   (d) use the Software, its design, or its methods to build or assist in
+       building a competing product or service;
+   (e) remove, obscure, or alter any copyright, trademark, or other proprietary
+       notice.
+
+3. NO IMPLIED LICENSE.
+   Public visibility on a code-hosting platform (including the ability to view,
+   clone, or fork via that platform's interface) does not grant any right beyond
+   Section 1. All rights not expressly granted are reserved by the Licensor.
+
+4. COMMERCIAL LICENSING.
+   To obtain rights to use the Software, request a commercial license from the
+   Licensor at: palla.nagendra@gmail.com.
+
+5. THIRD-PARTY COMPONENTS.
+   The Software depends on third-party open-source packages, each of which
+   remains governed by its own license. This License applies only to the
+   Licensor's own code in this repository and grants no rights in those
+   components.
+
+6. TRADEMARKS.
+   "EBSMCP" and associated marks are the Licensor's. "Oracle", "Oracle
+   E-Business Suite", and "Oracle EBS" are trademarks of Oracle Corporation, and
+   "Model Context Protocol" and "MCP" are used to refer to the open protocol
+   published by Anthropic — all used here for nominative, descriptive purposes
+   only. This project is not affiliated with, endorsed by, or sponsored by
+   Oracle Corporation or Anthropic.
+
+7. NO WARRANTY.
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+
+8. LIMITATION OF LIABILITY.
+   IN NO EVENT SHALL THE LICENSOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM,
+   OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR ITS USE.
+
+9. TERMINATION.
+   Any breach of this License automatically terminates the rights granted in
+   Section 1.
+
+-------------------------------------------------------------------------------
+This text is a template provided for convenience and is not legal advice. Have
+qualified legal counsel review and adapt it before relying on it.
