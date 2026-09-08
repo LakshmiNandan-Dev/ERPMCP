@@ -1,0 +1,71 @@
+# Reference nginx server block: TLS-terminating reverse proxy in front of
+# mcp-server (Docker service name/port below — adjust if yours differs),
+# for Copilot/Entra, which require real HTTPS. Not wired into anything —
+# copy/adapt into your own nginx setup.
+#
+# ${DOMAIN}: replace with your real hostname everywhere it appears below
+# (server_name, the two ssl_certificate paths), or — if you run this via
+# the official nginx:alpine image's template mechanism (a file dropped in
+# /etc/nginx/templates/*.template, envsubst'd into conf.d at container
+# start) — set a DOMAIN env var on that container instead. Either way,
+# nginx's own $host/$scheme/$remote_addr variables below are untouched;
+# they're only substituted by that mechanism if a same-named env var
+# happens to exist, which none of these do.
+#
+# Certificate paths below match certbot's own layout
+# (/etc/letsencrypt/live/<domain>/{fullchain,privkey}.pem) so a real
+# Let's Encrypt certificate drops in with no path change — point
+# ssl_certificate/ssl_certificate_key at wherever your certs actually are
+# if that's not how you're obtaining them.
+
+server {
+    listen 80;
+    server_name ${DOMAIN};
+
+    # Let's Encrypt's HTTP-01 challenge — must stay on plain HTTP, unproxied,
+    # for certbot to ever be able to issue/renew a real certificate.
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    server_name ${DOMAIN};
+
+    ssl_certificate     /etc/nginx/certs/live/${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/live/${DOMAIN}/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    # mcp-server serves everything under one origin — the /mcp endpoint
+    # itself plus the auto-exposed /.well-known/oauth-* discovery routes
+    # (see server.py) — so one catch-all location proxies the whole thing
+    # rather than risking a missed path with several narrower locations.
+    location / {
+        # mcp-server:8080 assumes nginx runs as a container on the same
+        # Docker network as the mcp-server service (its compose service
+        # name resolves via Docker's own DNS). If nginx runs directly on
+        # the host instead, use http://localhost:8080 (mcp-server's
+        # docker-compose.yml already publishes that port to the host).
+        proxy_pass http://mcp-server:8080;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # streamable-http is a long-lived SSE-style connection, not a
+        # request/response round trip — buffering or a short timeout here
+        # would silently break every tool call by cutting the stream.
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+}
