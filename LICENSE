@@ -7,41 +7,61 @@ proprietary to and remain the exclusive property of the copyright holder
 ("Licensor"). This is NOT open-source software, and no open-source license is
 granted.
 
-1. LIMITED GRANT.
+1. LIMITED GRANT — EVALUATION AND TESTING.
    Subject to this License, you are granted a limited, non-exclusive,
-   non-transferable, revocable right to view and read the source in this
-   repository solely for personal evaluation and reference.
+   non-transferable, non-sublicensable, revocable, royalty-free right to:
+   (a) view and read the source in this repository; and
+   (b) install, configure, run, and execute the Software in a non-production
+       environment for the sole purpose of internal evaluation and testing
+       ("Evaluation Use"), including testing against your own non-production
+       data and against your own non-production Oracle EBS instances.
 
-2. RESTRICTIONS.
+   Evaluation Use is for your own internal assessment only. It does not permit
+   production use, commercial use, or use to process live business data or to
+   deliver any service to a third party.
+
+2. CONFIGURATION AND LOCAL MODIFICATION.
+   During Evaluation Use you may modify configuration and make local source
+   changes strictly to the extent necessary to install, integrate, and test the
+   Software in your own environment. Any such modification remains subject to
+   this License, confers no ownership in the Software, and may not be
+   distributed or published under Section 3(c).
+
+3. RESTRICTIONS.
    Except as expressly authorized in a separate written agreement signed by the
    Licensor, you may NOT:
-   (a) use, run, execute, or deploy the Software, in whole or in part, for any
-       purpose — including evaluation against your own data, development,
-       internal, production, or commercial use;
-   (b) copy, reproduce, modify, adapt, translate, or create derivative works;
+   (a) use, run, or deploy the Software in production, for any commercial
+       purpose, to process live or production business data, or to deliver
+       services to any third party;
+   (b) create derivative works beyond the local modifications permitted by
+       Section 2;
    (c) distribute, publish, sublicense, sell, rent, lease, lend, or otherwise
-       transfer the Software or any portion of it;
+       transfer the Software, any portion of it, or any modification of it;
    (d) use the Software, its design, or its methods to build or assist in
        building a competing product or service;
-   (e) remove, obscure, or alter any copyright, trademark, or other proprietary
+   (e) publish or disclose benchmark or performance results without the
+       Licensor's prior written consent;
+   (f) remove, obscure, or alter any copyright, trademark, or other proprietary
        notice.
 
-3. NO IMPLIED LICENSE.
+4. NO IMPLIED LICENSE.
    Public visibility on a code-hosting platform (including the ability to view,
    clone, or fork via that platform's interface) does not grant any right beyond
-   Section 1. All rights not expressly granted are reserved by the Licensor.
+   Sections 1 and 2. All rights not expressly granted are reserved by the
+   Licensor.
 
-4. COMMERCIAL LICENSING.
-   To obtain rights to use the Software, request a commercial license from the
-   Licensor at: palla.nagendra@gmail.com.
+5. COMMERCIAL LICENSING.
+   To obtain rights beyond Evaluation Use — including any production or
+   commercial deployment — request a commercial license from the Licensor at:
+   palla.nagendra@gmail.com.
 
-5. THIRD-PARTY COMPONENTS.
+6. THIRD-PARTY COMPONENTS.
    The Software depends on third-party open-source packages, each of which
    remains governed by its own license. This License applies only to the
    Licensor's own code in this repository and grants no rights in those
    components.
 
-6. TRADEMARKS.
+7. TRADEMARKS.
    "EBSMCP" and associated marks are the Licensor's. "Oracle", "Oracle
    E-Business Suite", and "Oracle EBS" are trademarks of Oracle Corporation, and
    "Model Context Protocol" and "MCP" are used to refer to the open protocol
@@ -49,19 +69,23 @@ granted.
    only. This project is not affiliated with, endorsed by, or sponsored by
    Oracle Corporation or Anthropic.
 
-7. NO WARRANTY.
+8. NO WARRANTY.
    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-   FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+   FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. EVALUATION USE IS
+   ENTIRELY AT YOUR OWN RISK. The Software connects to Oracle EBS databases and
+   you are solely responsible for the credentials, entitlements, and data it is
+   given access to in your environment.
 
-8. LIMITATION OF LIABILITY.
+9. LIMITATION OF LIABILITY.
    IN NO EVENT SHALL THE LICENSOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM,
    OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR ITS USE.
 
-9. TERMINATION.
-   Any breach of this License automatically terminates the rights granted in
-   Section 1.
+10. TERMINATION.
+    Any breach of this License automatically terminates the rights granted in
+    Sections 1 and 2. The Licensor may revoke Evaluation Use at any time on
+    written notice, after which you must cease all use and delete all copies.
 
 -------------------------------------------------------------------------------
 This text is a template provided for convenience and is not legal advice. Have
