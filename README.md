@@ -252,18 +252,42 @@ functional mapping can never be saved without a username and domain.
 
 ### Onboarding a user
 
-1. **Bootstrap an admin account.** Deliberately a script, not an endpoint —
-   the first account has nothing to authenticate against, and the app's
-   runtime role has only `SELECT` on `admin_accounts`. Run it with the same
-   privileged credential used for migrations:
+1. **Bootstrap an admin account.** A fresh deployment has **no admin account
+   at all** — the `admin_accounts` table is created empty and nothing is
+   seeded, so no sign-in works until you create the first account here. This
+   is deliberate: a shipped default would make every deployment guessable, and
+   the app's runtime role holds only `SELECT` on `admin_accounts`, so the
+   running service cannot create or modify admins even in principle. Creation
+   is a separate, out-of-band step, run with the same privileged credential
+   used for migrations.
+
+   **Docker Compose (the usual case)** — run the script inside the
+   `management-api` container, which already has Python, the dependencies, and
+   a route to Postgres, so nothing needs installing on the host:
+
+   ```bash
+   docker compose exec \
+     -e IDENTITY_DB_URL=postgresql+psycopg://postgres:postgres@postgres:5432/ebsmcp_identity \
+     management-api python scripts/create_admin.py --username admin@corp.com
+   ```
+
+   **Running the API directly on the host** instead:
 
    ```bash
    cd management-api
-   python scripts/create_admin.py --username admin@corp.com
+   IDENTITY_DB_URL=postgresql+psycopg://postgres:postgres@localhost:5433/ebsmcp_identity \
+     python scripts/create_admin.py --username admin@corp.com
    ```
 
+   Note the host form uses port **5433** — the port Compose publishes Postgres
+   on — while the in-container form uses the internal **5432**. In a real
+   deployment, point `IDENTITY_DB_URL` at that environment's own database with
+   its own credentials, not the compose defaults shown here.
+
    The password is prompted for, never taken as an argument, so it stays out
-   of shell history and process listings. Use `--reset-password` to change one.
+   of shell history and process listings. Use `--reset-password` to change an
+   existing account's password (for example, if you forget it — hashes cannot
+   be recovered, only reset).
 
 2. **Sign in** at the admin console, or `POST /auth/login` for a 12-hour
    session token.
