@@ -59,6 +59,45 @@ def load_env_file(path: str) -> None:
             os.environ.setdefault(key.strip(), value.strip())
 
 
+def describe_env_state() -> str:
+    """Why no instances were found, in terms the reader can act on.
+
+    "Not configured" is three different situations with three different
+    fixes, and collapsing them into one message sends people to the wrong
+    file — which is exactly what happens when the variable is set in
+    mcp-server/.env and the stack is run with docker compose.
+    """
+    raw = os.environ.get("EBSMCP_EBS_INSTANCES")
+
+    if raw is not None and raw.strip() == "{}":
+        return (
+            "EBSMCP_EBS_INSTANCES is set, but to an empty object: {}\n\n"
+            "That is docker-compose's DEFAULT, from ${EBSMCP_EBS_INSTANCES:-{}} in\n"
+            "docker-compose.yml. It means Compose did not find the variable.\n\n"
+            "Compose reads ONLY the file named exactly '.env' beside\n"
+            "docker-compose.yml. It does NOT read mcp-server/.env — that file is\n"
+            "used only when running the server directly on the host.\n\n"
+            "Fix: put EBSMCP_EBS_INSTANCES in the ROOT .env, or point this script\n"
+            "at the file that has it:\n"
+            "    --env-file /path/to/mcp-server/.env"
+        )
+
+    if raw is not None and not raw.strip():
+        return (
+            "EBSMCP_EBS_INSTANCES is set but empty.\n\n"
+            "A common cause is ${VAR:-} in docker-compose.yml with VAR unset —\n"
+            "that passes an empty string, not 'unset'."
+        )
+
+    return (
+        "No EBS connection configured — EBSMCP_EBS_INSTANCES is not set at all,\n"
+        "and neither is EBS_DB_DSN.\n\n"
+        "Set one of them, or pass --env-file pointing at the .env that holds them.\n"
+        "Note that docker compose reads only the .env beside docker-compose.yml,\n"
+        "not mcp-server/.env."
+    )
+
+
 def instances_from_env() -> dict[str, dict]:
     raw = os.environ.get("EBSMCP_EBS_INSTANCES", "").strip()
     if raw and raw != "{}":
@@ -82,11 +121,7 @@ def instances_from_env() -> dict[str, dict]:
             }
         }
 
-    sys.exit(
-        "No EBS connection configured. Set EBSMCP_EBS_INSTANCES (several "
-        "databases) or EBS_DB_DSN/EBS_DB_USER/EBS_DB_PASSWORD (one), or pass "
-        "--env-file pointing at the .env that holds them."
-    )
+    sys.exit(describe_env_state())
 
 
 def check(name: str, cfg: dict, timeout: int) -> tuple[bool, str]:
