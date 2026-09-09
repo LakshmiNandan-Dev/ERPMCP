@@ -25,7 +25,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from ebsmcp.audit import AuditLogger
 from ebsmcp.auth import EntraTokenVerifier, HttpJWKSSource
 from ebsmcp.config import Settings, load_settings
-from ebsmcp.connectors import MockEBSConnector, OracleEBSConnector
+from ebsmcp.connectors import MockEBSConnector, OracleEBSConnector, init_thick_mode_if_configured
 from ebsmcp.connectors.base import EBSConnector
 from ebsmcp.identity import IdentityResolver, PostgresIdentityResolver, ResolvedIdentity, StubIdentityResolver
 from ebsmcp.policy import EntitlementFilter
@@ -53,6 +53,11 @@ def build_connectors(settings: Settings) -> dict[str, EBSConnector]:
     — real ebs_instances if set, else the legacy singular EBS_DB_* vars
     synthesized as one instance), keyed by uppercased instance name.
     """
+    # Switch python-oracledb into thick mode once, before any real connection,
+    # if the deployment needs it for a 10g-verifier EBS instance (DPY-3015).
+    # No-op in the default thin configuration.
+    init_thick_mode_if_configured(settings.oracle_thick_mode)
+
     instances = settings.resolved_ebs_instances
     if instances:
         return {

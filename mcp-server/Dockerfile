@@ -2,6 +2,22 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# Oracle Instant Client — required only for THICK mode
+# (EBSMCP_ORACLE_THICK_MODE=true), which is how we authenticate against EBS
+# instances running SEC_CASE_SENSITIVE_LOGON=FALSE (the 10g verifier that thin
+# mode rejects with DPY-3015). Harmless when thick mode is off. Basic Lite is
+# the smallest package that supports connectivity. Pin the version for
+# reproducible builds; libaio1 is its one OS dependency.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libaio1 wget unzip ca-certificates \
+ && wget -q https://download.oracle.com/otn_software/linux/instantclient/1928000/instantclient-basiclite-linux.x64-19.28.0.0.0dbru.zip \
+ && unzip -q instantclient-basiclite-linux.x64-19.28.0.0.0dbru.zip -d /opt/oracle \
+ && rm instantclient-basiclite-linux.x64-19.28.0.0.0dbru.zip \
+ && echo /opt/oracle/instantclient_19_28 > /etc/ld.so.conf.d/oracle-instantclient.conf \
+ && ldconfig \
+ && apt-get purge -y wget unzip && apt-get autoremove -y && apt-get clean \
+ && rm -rf /var/lib/apt/lists/*
+
 COPY pyproject.toml ./
 COPY src ./src
 

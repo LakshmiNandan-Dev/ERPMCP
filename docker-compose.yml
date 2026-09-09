@@ -27,7 +27,13 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     volumes:
-      - ebsmcp_postgres_data:/var/lib/postgresql/data
+      # Where Postgres keeps its data. Defaults to the named docker volume
+      # `ebsmcp_postgres_data` (managed by docker). Set POSTGRES_DATA_DIR in
+      # the root .env to a host path — e.g. /pgvolume/EBSMCP/database — to
+      # bind-mount instead, so the data lives at a known location on the host.
+      # A value starting with / is a host bind mount; a bare name is a docker
+      # named volume (which must stay declared under `volumes:` below).
+      - ${POSTGRES_DATA_DIR:-ebsmcp_postgres_data}:/var/lib/postgresql/data
       - ./postgres-init:/docker-entrypoint-initdb.d:ro
     ports:
       - "${POSTGRES_HOST_PORT:-5433}:5432"
@@ -112,6 +118,10 @@ services:
       # The {}/[] fallbacks on the JSON-decoded vars are required, not
       # decorative: pydantic-settings fails to start on an empty string for a
       # dict/list field, unlike the plain string vars where empty = unset.
+      # Thick mode — set true for EBS instances with SEC_CASE_SENSITIVE_LOGON=FALSE
+      # (10g verifier; thin mode fails with DPY-3015). Needs the Instant Client
+      # baked into the image (see mcp-server/Dockerfile).
+      EBSMCP_ORACLE_THICK_MODE: ${EBSMCP_ORACLE_THICK_MODE:-false}
       EBSMCP_EBS_INSTANCES: ${EBSMCP_EBS_INSTANCES:-{}}
       EBS_DB_DSN: ${EBS_DB_DSN:-}
       EBS_DB_USER: ${EBS_DB_USER:-}

@@ -80,6 +80,13 @@ class Settings(BaseSettings):
     # connector.
     identity_db_url: str | None = Field(default=None, alias="IDENTITY_DB_URL")
 
+    # python-oracledb thick mode. Thin mode (the default) cannot log in to an
+    # EBS account the server authenticates with the 10g verifier — which is
+    # every account when SEC_CASE_SENSITIVE_LOGON=FALSE, failing with DPY-3015.
+    # Set true (and ship the Instant Client in the image) to connect to such
+    # instances. Default false keeps thin mode for the mock and the tests.
+    oracle_thick_mode: bool = Field(default=False, alias="EBSMCP_ORACLE_THICK_MODE")
+
     # streamable-http's DNS-rebinding protection: the mcp SDK's own
     # TransportSecuritySettings defaults both of these to an EMPTY list,
     # which rejects every request until a host is explicitly allowed — a
