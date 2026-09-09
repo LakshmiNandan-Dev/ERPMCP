@@ -6,10 +6,20 @@ WORKDIR /app
 # (EBSMCP_ORACLE_THICK_MODE=true), which is how we authenticate against EBS
 # instances running SEC_CASE_SENSITIVE_LOGON=FALSE (the 10g verifier that thin
 # mode rejects with DPY-3015). Harmless when thick mode is off. Basic Lite is
-# the smallest package that supports connectivity. Pin the version for
-# reproducible builds; libaio1 is its one OS dependency.
+# the smallest package that supports connectivity; libaio is its one OS
+# dependency.
+#
+# libaio1 vs libaio1t64: Debian 13 (trixie) renamed the package to libaio1t64
+# in the 64-bit time_t transition, so newer python:3.x-slim bases don't have
+# libaio1. Try the new name first, fall back to the old one for bookworm-based
+# images. The client needs the SONAME libaio.so.1; if only the t64 variant is
+# present, symlink it so Oracle's loader finds it.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends libaio1 wget unzip ca-certificates \
+ && apt-get install -y --no-install-recommends wget unzip ca-certificates \
+ && (apt-get install -y --no-install-recommends libaio1t64 \
+     || apt-get install -y --no-install-recommends libaio1) \
+ && ( ldconfig -p | grep -q 'libaio\.so\.1$' \
+      || ln -sf "$(ldconfig -p | grep -oE '/[^ ]*libaio\.so\.1t64' | head -1)" /lib/libaio.so.1 ) \
  && wget -q https://download.oracle.com/otn_software/linux/instantclient/1928000/instantclient-basiclite-linux.x64-19.28.0.0.0dbru.zip \
  && unzip -q instantclient-basiclite-linux.x64-19.28.0.0.0dbru.zip -d /opt/oracle \
  && rm instantclient-basiclite-linux.x64-19.28.0.0.0dbru.zip \
