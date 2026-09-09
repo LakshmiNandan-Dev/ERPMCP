@@ -1,30 +1,38 @@
-# Local/dev stack for all five pieces of EBSMCP. Two shortcuts here are
-# deliberately NOT how a real deployment should look:
+# Local/dev + single-host deployment stack for all five pieces of EBSMCP.
 #
-# 1. A single Postgres superuser (postgres/postgres) owns both databases.
-#    Each service's own docs (management-api/.env.example, audit-service's
-#    db/provisioning.py) describe least-privilege roles per database
-#    (mgmt_identity_writer, mgmt_audit_reader, ebsmcp_audit_writer/reader)
-#    — worth provisioning for anything beyond a laptop.
-# 2. EBS_DB_DSN (or EBSMCP_EBS_INSTANCES, for more than one EBS database —
-#    see mcp-server/.env.example), ADMIN_SESSION_SECRET, and the Entra vars
-#    are left unset, same as every service's .env.example: mcp-server and
-#    management-api fall back to their mock/stub connectors and admin_gui
-#    keeps the free-text "Acting as" stub instead of real sign-in. Set them
-#    here (or in a docker-compose.override.yml) to point at real EBS/Entra.
+# ONE configuration file drives everything: a root `.env` beside this file.
+# Copy `.env.example` to `.env`, fill in what you need, and `docker compose
+# up`. Every value below reads from that root `.env` via ${VAR:-default};
+# with no `.env` present the defaults reproduce the original dev behaviour
+# (mock EBS connector, X-Admin-Subject stub, postgres/postgres).
+#
+# Compose reads ONLY the `.env` in the directory you run it from (this
+# directory). The per-service files (mcp-server/.env, management-api/.env,
+# admin-gui/.env) are for running those services directly on the host WITHOUT
+# Docker — Compose never reads them. Keep real configuration in the root
+# `.env` to avoid the two disagreeing.
+#
+# Two defaults are dev shortcuts, NOT production-safe — override both in a
+# real deployment:
+#   1. POSTGRES_PASSWORD defaults to `postgres`, and one superuser owns both
+#      databases. Set a real password (it propagates to every service's
+#      connection string below), and see each service's docs for the
+#      least-privilege per-database roles worth provisioning beyond a laptop.
+#   2. ADMIN_SESSION_SECRET / the Entra vars are unset, so admin sign-in falls
+#      back to the X-Admin-Subject stub and MCP auth is anonymous.
 services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     volumes:
       - ebsmcp_postgres_data:/var/lib/postgresql/data
       - ./postgres-init:/docker-entrypoint-initdb.d:ro
     ports:
-      - "5433:5432"
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -33,7 +41,7 @@ services:
   identity-migrate:
     build: ./identity-service
     environment:
-      IDENTITY_DB_URL: postgresql+psycopg://postgres:postgres@postgres:5432/ebsmcp_identity
+      IDENTITY_DB_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/ebsmcp_identity
     depends_on:
       postgres:
         condition: service_healthy
@@ -41,7 +49,7 @@ services:
   audit-migrate:
     build: ./audit-service
     environment:
-      AUDIT_DB_URL: postgresql+psycopg://postgres:postgres@postgres:5432/ebsmcp_audit
+      AUDIT_DB_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/ebsmcp_audit
     depends_on:
       postgres:
         condition: service_healthy
@@ -49,16 +57,19 @@ services:
   management-api:
     build: ./management-api
     environment:
-      IDENTITY_DB_URL: postgresql+psycopg://postgres:postgres@postgres:5432/ebsmcp_identity
-      AUDIT_DB_URL: postgresql+psycopg://postgres:postgres@postgres:5432/ebsmcp_audit
-      # Unset (the default when no root .env exists) keeps the
-      # X-Admin-Subject stub active — see app/deps.py. Set ADMIN_SESSION_SECRET
-      # in a root .env file to switch this deployment to real admin sign-in;
-      # keep admin-gui's VITE_LOCAL_ADMIN_AUTH_ENABLED build arg below in sync
-      # with it, since a login form with no secret configured 503s forever.
+      IDENTITY_DB_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/ebsmcp_identity
+      AUDIT_DB_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/ebsmcp_audit
+      # Set ADMIN_SESSION_SECRET in the root .env to switch from the
+      # X-Admin-Subject stub to real admin sign-in. It must agree with
+      # admin-gui's VITE_LOCAL_ADMIN_AUTH_ENABLED below: a login form with no
+      # secret configured 503s forever. Onboarding lookups against a real EBS
+      # (GET /ebs-lookup/...) use the same EBS_DB_* vars as mcp-server.
       ADMIN_SESSION_SECRET: ${ADMIN_SESSION_SECRET:-}
+      EBS_DB_DSN: ${EBS_DB_DSN:-}
+      EBS_DB_USER: ${EBS_DB_USER:-}
+      EBS_DB_PASSWORD: ${EBS_DB_PASSWORD:-}
     ports:
-      - "8010:8010"
+      - "${MANAGEMENT_API_HOST_PORT:-8010}:8010"
     depends_on:
       identity-migrate:
         condition: service_completed_successfully
@@ -70,16 +81,18 @@ services:
     build:
       context: ./admin-gui
       args:
-        # Browser-reachable origin, so the host-mapped port above, not the
-        # in-network service name — see the ARG comment in admin-gui/Dockerfile.
-        VITE_API_BASE_URL: http://localhost:8010
-        # Must agree with management-api's ADMIN_SESSION_SECRET above: true
-        # shows a real login form (AdminIdentity.tsx), which needs a
-        # configured secret and at least one admin_accounts row to ever
-        # succeed (see scripts/create_admin.py).
-        VITE_LOCAL_ADMIN_AUTH_ENABLED: "true"
+        # Browser-reachable origin of management-api — the host-mapped port,
+        # not the in-network service name. From another machine this must be
+        # the Docker host's address, not localhost. Baked in at BUILD time, so
+        # changing it needs `docker compose build --no-cache admin-gui`.
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8010}
+        # Must agree with management-api's ADMIN_SESSION_SECRET: "true" shows a
+        # real login form, which needs a configured secret and at least one
+        # admin_accounts row to succeed (see scripts/create_admin.py). Set to
+        # "false" to use the free-text "Acting as" stub instead.
+        VITE_LOCAL_ADMIN_AUTH_ENABLED: ${VITE_LOCAL_ADMIN_AUTH_ENABLED:-true}
     ports:
-      - "5174:80"
+      - "${ADMIN_GUI_HOST_PORT:-5174}:80"
     depends_on:
       - management-api
     restart: unless-stopped
@@ -87,15 +100,18 @@ services:
   mcp-server:
     build: ./mcp-server
     environment:
-      IDENTITY_DB_URL: postgresql+psycopg://postgres:postgres@postgres:5432/ebsmcp_identity
-      # Every var below is client-specific and left unset (mock EBS
-      # connector, no real Entra auth, DNS-rebinding protection rejecting
-      # every host) until a root .env file or docker-compose.override.yml
-      # sets it — see mcp-server/.env.example for what each one looks like
-      # filled in. The {}/[] fallbacks on the JSON-decoded ones are
-      # required, not decorative: pydantic-settings fails to start at all
-      # on an empty string for a dict/list field, unlike the plain string
-      # vars below it, where an empty string is already a safe "unset".
+      IDENTITY_DB_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/ebsmcp_identity
+      # Which deploy stage this serves — identity mappings must match it.
+      EBSMCP_ENVIRONMENT: ${EBSMCP_ENVIRONMENT:-dev}
+      # The single subject every caller collapses to while MCP auth is
+      # anonymous (no Entra configured). Your ebs_dba identity mapping must
+      # use this exact value. Ignored once real Entra auth is active.
+      EBSMCP_DEV_IDENTITY_SUBJECT: ${EBSMCP_DEV_IDENTITY_SUBJECT:-dev-user@example.com}
+      # Left at safe defaults (mock EBS connector, no Entra auth, host
+      # allowlist rejecting every request) until the root .env sets them.
+      # The {}/[] fallbacks on the JSON-decoded vars are required, not
+      # decorative: pydantic-settings fails to start on an empty string for a
+      # dict/list field, unlike the plain string vars where empty = unset.
       EBSMCP_EBS_INSTANCES: ${EBSMCP_EBS_INSTANCES:-{}}
       EBS_DB_DSN: ${EBS_DB_DSN:-}
       EBS_DB_USER: ${EBS_DB_USER:-}
@@ -107,7 +123,7 @@ services:
       EBSMCP_ALLOWED_HOSTS: ${EBSMCP_ALLOWED_HOSTS:-[]}
       EBSMCP_ALLOWED_ORIGINS: ${EBSMCP_ALLOWED_ORIGINS:-[]}
     ports:
-      - "8080:8080"
+      - "${MCP_SERVER_HOST_PORT:-8080}:8080"
     depends_on:
       identity-migrate:
         condition: service_completed_successfully
