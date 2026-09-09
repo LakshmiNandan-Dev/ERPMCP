@@ -317,8 +317,21 @@ functional mapping can never be saved without a username and domain.
 sets `effective_end_date`, which ends access while keeping every
 `created_by`/`updated_by` reference in the audit trail meaningful.
 
-Similarly, disable an admin by setting `is_active = false` rather than
-removing the row.
+Similarly, disable an admin with `scripts/remove_admin.py` rather than
+deleting the row — the default deactivates (`is_active = false`), which
+blocks sign-in immediately while keeping the `created_by`/`updated_by`
+references that admin left on every mapping they touched. The script also
+lists accounts, reactivates one, and hard-deletes with `--delete` (which
+breaks that history, so it is not the default), and it refuses to remove
+the last active admin so you cannot lock yourself out:
+
+```bash
+docker compose exec \
+  -e IDENTITY_DB_URL=postgresql+psycopg://postgres:postgres@postgres:5432/ebsmcp_identity \
+  management-api python scripts/remove_admin.py --list
+docker compose exec -e IDENTITY_DB_URL=... \
+  management-api python scripts/remove_admin.py --username admin@corp.com
+```
 
 ### The uniqueness rule
 
