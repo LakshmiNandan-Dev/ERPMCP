@@ -97,6 +97,88 @@ def build_patch_history_query(
     return sql, binds
 
 
+# A patch number is a bug number in Oracle's tracking. AD_APPLIED_PATCHES
+# records only the top-level driver that was RUN, so a patch delivered inside
+# a merged patch or a bundle never appears there — checking PATCH_NAME for
+# "is 36839803 applied?" returns a false negative. AD_BUGS carries a row for
+# every bug a patch delivered, which is why it is the check EBS DBAs actually
+# run and the only one that answers this question correctly.
+_PATCH_APPLIED_LIMIT = 50
+
+
+def normalize_patch_number(patch_number: str) -> str:
+    """Accept what people actually type — "36839803", "p36839803",
+    "Patch 36839803" — and return the bare number AD_BUGS stores.
+
+    Deliberately conservative: only a leading "patch" word or a lone leading
+    "p" before digits is removed. Bug numbers are not always pure digits, so
+    stripping every non-digit would corrupt the ones that aren't.
+    """
+    value = (patch_number or "").strip()
+    lowered = value.lower()
+    if lowered.startswith("patch"):
+        value = value[len("patch"):].strip()
+    elif len(value) > 1 and lowered[0] == "p" and value[1].isdigit():
+        value = value[1:]
+    return value.strip()
+
+
+def build_patch_applied_query(patch_number: str) -> tuple[str, dict[str, Any]]:
+    """Bound, never interpolated — the patch number comes from a caller.
+
+    Pure function, unit-tested directly — see
+    test_patch_version_tracking_query.py.
+    """
+    sql = (
+        "SELECT ab.bug_number, ab.application_short_name, ab.creation_date, "
+        "ab.bug_status, ab.success_flag, ab.aru_release_name, ab.language "
+        "FROM APPS.AD_BUGS ab "
+        "WHERE ab.bug_number = :patch_number "
+        "ORDER BY ab.creation_date DESC "
+        f"FETCH FIRST {_PATCH_APPLIED_LIMIT} ROWS ONLY"
+    )
+    return sql, {"patch_number": normalize_patch_number(patch_number)}
+
+
+def summarize_patch_applied(patch_number: str, rows: list[dict]) -> tuple[bool, str]:
+    """Decide applied/not-applied in Python, so the model never has to infer
+    a yes/no from a row list — the same discipline as every other summary in
+    this catalog.
+
+    Existence is what decides it, which also makes the answer immune to a row
+    appearing more than once (AD_BUGS carries a row per product and language,
+    and on an edition-enabled instance may carry more than one per edition).
+
+    Pure function, unit-tested directly.
+    """
+    wanted = normalize_patch_number(patch_number)
+    if not rows:
+        return False, (
+            f"Patch {wanted} is NOT recorded as applied on this instance "
+            "(no row in AD_BUGS)."
+        )
+
+    products = sorted({r.get("application_short_name") for r in rows if r.get("application_short_name")})
+    dates = [r.get("creation_date") for r in rows if r.get("creation_date")]
+    first = min(dates) if dates else None
+    unsuccessful = [r for r in rows if r.get("success_flag") not in ("Y", None)]
+
+    detail = f"{len(rows)} row(s) in AD_BUGS"
+    if products:
+        detail += f" across {', '.join(products)}"
+    if first is not None:
+        detail += f"; earliest recorded {first}"
+
+    summary = f"Patch {wanted} IS applied — {detail}."
+    if unsuccessful:
+        # Present but not clean: say so rather than let "applied" imply "fine".
+        summary += (
+            f" Note: {len(unsuccessful)} row(s) do not have success_flag='Y' — "
+            "check those before treating this as a clean apply."
+        )
+    return True, summary
+
+
 _ADOP_PHASE_COLUMNS = (
     "prepare_status",
     "apply_status",
@@ -199,8 +281,10 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
         days=10 for the last 10, days=1 for the last 24 hours. Without days
         it returns the 25 most recent patches regardless of age.
 
-        This is the tool for "what patches were applied recently".
-        adop_session_status is NOT — that reports the progress of R12.2
+        This is the tool for "what patches were applied recently". For "is
+        patch NNNN applied?" use patch_applied instead — this view reads
+        AD_APPLIED_PATCHES, which does not record patches delivered inside a
+        merged or bundled patch. adop_session_status is NOT — that reports the progress of R12.2
         patching SESSIONS (prepare/apply/cutover), not which patches they
         delivered. Call list_ebs_instances first if unsure which EBS instance names (e.g. PROD, UAT) this deployment has configured."""
         with resolve_scoped_call(
@@ -307,6 +391,47 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
                 "mapped_role": identity.mapped_role,
                 "summary": summary,
                 "sessions": annotated,
+            }
+
+    @app.tool(
+        annotations=ToolAnnotations(
+            read_only_hint=True,
+            destructive_hint=False,
+            idempotent_hint=True,
+        )
+    )
+    def patch_applied(patch_number: str, instance: str | None = None) -> dict:
+        """Is one SPECIFIC patch applied on this instance? Give the patch
+        number ("36839803", "p36839803" and "Patch 36839803" all work) and
+        this answers yes or no against AD_BUGS.
+
+        Use this whenever the question names a patch number. Do NOT use
+        patch_history for it: that lists what was applied and reads
+        AD_APPLIED_PATCHES, which records only the top-level patch driver
+        that was run — a patch delivered inside a merged patch or a bundle
+        is absent there, so checking it would report "not applied" for a
+        patch that is in fact applied. AD_BUGS has a row per bug a patch
+        delivered, which is why it is the correct check.
+
+        Returns applied (a real true/false, decided from the data, not
+        inferred) plus every matching row. Call list_ebs_instances first if unsure which EBS instance names (e.g. PROD, UAT) this deployment has configured."""
+        with resolve_scoped_call(
+            ctx,
+            tool_name="patch_applied",
+            target_system="ebs_dba",
+            params={"patch_number": patch_number},
+            requested_instance=instance,
+        ) as (identity, _effective_org_ids, connector):
+            sql, binds = build_patch_applied_query(patch_number)
+            rows = connector.run(sql, binds)
+            applied, summary = summarize_patch_applied(patch_number, rows)
+            return {
+                "environment": ctx.environment,
+                "mapped_role": identity.mapped_role,
+                "patch_number": binds["patch_number"],
+                "applied": applied,
+                "summary": summary,
+                "occurrences": rows,
             }
 
 
