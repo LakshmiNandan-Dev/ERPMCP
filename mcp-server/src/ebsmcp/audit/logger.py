@@ -4,13 +4,21 @@ Every request and response gets recorded — including denials and errors,
 not just successes, since "an entitlement check rejected this call" is
 exactly the kind of event an audit trail exists to capture.
 
-This writes structured JSON lines to stdout for the core slice. That's
-intentional, not a shortcut to fix later under a different design: stdout
-from a container is what any enterprise log pipeline (Fluent Bit, Vector,
-whatever the platform already runs) picks up first. The append-only
-Postgres/Oracle audit store described in the architecture doc is a second
-sink layered on top of this same AuditRecord shape, not a replacement for
-it — swap or add to _emit() without changing any calling code.
+This writes structured JSON lines to stdout: stdout from a container is
+what any enterprise log pipeline (Fluent Bit, Vector, whatever the platform
+already runs) picks up first. The append-only store in audit-service is the
+second sink on the same AuditRecord shape, added here rather than replacing
+stdout, and enabled by passing db_url (AUDIT_DB_URL).
+
+Both sinks matter and they fail independently. stdout is the one that must
+not fail, so the database write is best-effort: if it raises, the failure is
+reported on stdout and the tool call still succeeds. The record is already
+durable in the log pipeline by then, and an audit-store outage must not
+become an outage of the product — refusing every tool call because a
+reporting database is down trades a real capability for no extra safety.
+The reverse is not true, which is why stdout is written first: an audit
+record that exists only in a database nobody has queried yet is weaker than
+one already in the log stream.
 """
 
 from __future__ import annotations
@@ -23,6 +31,10 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Iterator
+
+from sqlalchemy import Engine, create_engine, insert
+
+from ebsmcp.audit.tables import audit_log
 
 
 @dataclass
@@ -42,8 +54,66 @@ class AuditRecord:
 
 
 class AuditLogger:
+    def __init__(self, db_url: str | None = None, engine: Engine | None = None) -> None:
+        """db_url unset (and no engine injected) keeps stdout as the only
+        sink — the documented fallback, not a broken state. engine is for
+        tests, same injection point as PostgresIdentityResolver.
+        """
+        self._engine: Engine | None = engine
+        if self._engine is None and db_url:
+            self._engine = create_engine(db_url, pool_pre_ping=True)
+
     def _emit(self, record: AuditRecord) -> None:
+        # stdout first, unconditionally: see the module docstring on why this
+        # is the sink that must not fail.
         print(json.dumps(asdict(record)), file=sys.stdout, flush=True)
+        if self._engine is not None:
+            self._write_to_store(record)
+
+    def _write_to_store(self, record: AuditRecord) -> None:
+        """Best-effort insert into audit-service's audit_log.
+
+        Note what is NOT persisted: AuditRecord.instance. audit_log has no
+        column for it (see audit-service/db/models.py), so on a deployment
+        reaching several EBS databases the store cannot answer "which
+        instance did this subject touch" — only stdout can. Adding the
+        column is a migration against an append-only partitioned table, so
+        it is left as a deliberate, separate decision rather than smuggled
+        in here.
+        """
+        try:
+            with self._engine.begin() as conn:  # type: ignore[union-attr]
+                conn.execute(
+                    insert(audit_log).values(
+                        correlation_id=record.correlation_id,
+                        # The record's own timestamp, not the insert time:
+                        # occurred_at is the partition key, so a row must land
+                        # in the month the call actually happened in.
+                        occurred_at=datetime.fromisoformat(record.timestamp),
+                        tool_name=record.tool_name,
+                        subject=record.subject,
+                        environment=record.environment,
+                        target_system=record.target_system,
+                        status=record.status,
+                        # tuple -> list so it is JSON-encodable on both sinks.
+                        effective_org_ids=list(record.effective_org_ids),
+                        params=record.params,
+                        error_message=record.error_message,
+                        latency_ms=record.latency_ms,
+                    )
+                )
+        except Exception as exc:  # noqa: BLE001 - see module docstring
+            print(
+                json.dumps(
+                    {
+                        "audit_sink_error": str(exc),
+                        "correlation_id": record.correlation_id,
+                        "tool_name": record.tool_name,
+                    }
+                ),
+                file=sys.stdout,
+                flush=True,
+            )
 
     @contextmanager
     def audit_call(

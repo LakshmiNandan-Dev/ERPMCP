@@ -418,9 +418,16 @@ system, parameters, the **effective** Org IDs after filtering, the resolved
 instance, and latency.
 
 Records are written as JSON lines to stdout — which is what any log pipeline
-(Fluent Bit, Vector) collects from a container first. The partitioned
-Postgres/Oracle store in [audit-service/](audit-service/) is a second sink on the same record
-shape, not a replacement.
+(Fluent Bit, Vector) collects from a container first — and, when `AUDIT_DB_URL`
+is set, inserted into the partitioned store in [audit-service/](audit-service/)
+as a second sink on the same record shape, not a replacement. That second sink
+is what the admin console's **Audit log** page reads; without it the page is
+empty even though every call is still being audited to stdout.
+
+The two sinks fail independently and stdout is the one that must not fail: a
+write to the audit database is best-effort, and a failure is reported on stdout
+rather than raised, because the record is already durable there and refusing
+the tool call would turn an audit-store outage into an outage of the product.
 
 > **Operational note:** `audit_log` is partitioned by month with a `DEFAULT`
 > partition as a backstop, because a month with no partition would otherwise

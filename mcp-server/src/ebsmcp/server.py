@@ -576,6 +576,18 @@ def build_connectors(settings: Settings) -> dict[str, EBSConnector]:
     )}
 
 
+def build_audit_logger(settings: Settings) -> AuditLogger:
+    """stdout always; the queryable audit_log store as well when
+    AUDIT_DB_URL is configured. Unset is a supported deployment, not a
+    degraded one — every call is still audited to stdout — but the admin
+    console's Audit log page reads the store, so it stays empty until this
+    is set.
+    """
+    if settings.has_real_audit_db:
+        return AuditLogger(db_url=settings.audit_db_url)
+    return AuditLogger()
+
+
 def build_identity_resolver(settings: Settings) -> IdentityResolver:
     if settings.has_real_identity_db:
         return PostgresIdentityResolver(
@@ -641,7 +653,7 @@ def build_app(settings: Settings) -> MCPServer:
     app = MCPServer("ebsmcp", **auth_kwargs)
 
     connectors = build_connectors(settings)
-    audit = AuditLogger()
+    audit = build_audit_logger(settings)
     entitlement = EntitlementFilter()
     identity_resolver = build_identity_resolver(settings)
 

@@ -107,6 +107,10 @@ services:
     build: ./mcp-server
     environment:
       IDENTITY_DB_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/ebsmcp_identity
+      # The audit store. Without this the server still emits every record to
+      # stdout, but nothing lands in audit_log and the admin console's Audit
+      # log page stays empty — the reader has nothing to read.
+      AUDIT_DB_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/ebsmcp_audit
       # Which deploy stage this serves — identity mappings must match it.
       EBSMCP_ENVIRONMENT: ${EBSMCP_ENVIRONMENT:-dev}
       # The single subject every caller collapses to while MCP auth is
@@ -136,6 +140,9 @@ services:
       - "${MCP_SERVER_HOST_PORT:-8080}:8080"
     depends_on:
       identity-migrate:
+        condition: service_completed_successfully
+      # audit_log must exist before the first tool call tries to write to it.
+      audit-migrate:
         condition: service_completed_successfully
     restart: unless-stopped
 

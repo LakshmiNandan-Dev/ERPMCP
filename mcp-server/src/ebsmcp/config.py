@@ -80,6 +80,13 @@ class Settings(BaseSettings):
     # connector.
     identity_db_url: str | None = Field(default=None, alias="IDENTITY_DB_URL")
 
+    # The audit store — audit-service's schema, same env var name its own
+    # Alembic setup and management-api use. Unset means stdout remains the
+    # only sink, which is the documented fallback, not a broken state: the
+    # records are still emitted and still collectable by a log pipeline.
+    # Setting it adds the queryable second sink the admin console reads.
+    audit_db_url: str | None = Field(default=None, alias="AUDIT_DB_URL")
+
     # python-oracledb thick mode. Thin mode (the default) cannot log in to an
     # EBS account the server authenticates with the 10g verifier — which is
     # every account when SEC_CASE_SENSITIVE_LOGON=FALSE, failing with DPY-3015.
@@ -145,6 +152,10 @@ class Settings(BaseSettings):
     @property
     def has_real_identity_db(self) -> bool:
         return bool(self.identity_db_url)
+
+    @property
+    def has_real_audit_db(self) -> bool:
+        return bool(self.audit_db_url)
 
 
 def load_settings() -> Settings:
