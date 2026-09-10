@@ -15,6 +15,7 @@ class AuditLogEntryOut(BaseModel):
     environment: str
     target_system: str
     status: str
+    instance: str | None
     effective_org_ids: list[str] | None
     params: dict[str, Any] | None
     error_message: str | None

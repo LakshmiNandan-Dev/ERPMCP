@@ -106,6 +106,7 @@ export interface AuditLogEntry {
   environment: string;
   target_system: string;
   status: AuditStatus;
+  instance: string | null;
   effective_org_ids: string[] | null;
   params: Record<string, unknown> | null;
   error_message: string | null;

@@ -59,6 +59,7 @@ audit_log = Table(
     Column("environment", String(10), nullable=False),
     Column("target_system", String(10), nullable=False),
     Column("status", String(24), nullable=False),
+    Column("instance", String(64), nullable=True),
     Column("effective_org_ids", PortableJSON, nullable=True),
     Column("params", PortableJSON, nullable=True),
     Column("error_message", String(4000), nullable=True),

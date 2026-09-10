@@ -78,6 +78,10 @@ audit_log = Table(
     Column("environment", String(10), nullable=False),
     Column("target_system", String(10), nullable=False),
     Column("status", String(24), nullable=False),
+    # Which EBS database the call was routed to. Nullable: tools that touch
+    # no instance (list_ebs_instances) legitimately have none, and every row
+    # written before this column existed has none either.
+    Column("instance", String(64), nullable=True),
     Column("effective_org_ids", PortableJSON, nullable=True),
     Column("params", PortableJSON, nullable=True),
     Column("error_message", String(4000), nullable=True),
@@ -94,3 +98,6 @@ audit_log = Table(
 
 Index("ix_audit_log_correlation_id", audit_log.c.correlation_id)
 Index("ix_audit_log_subject_env", audit_log.c.subject, audit_log.c.environment)
+# Filtered on directly by the admin console's Audit log page — same reason
+# subject/environment above are indexed.
+Index("ix_audit_log_instance", audit_log.c.instance)

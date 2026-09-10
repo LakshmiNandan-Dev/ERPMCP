@@ -89,7 +89,13 @@ export function closeIdentityMapping(id: number): Promise<IdentityMapping> {
 export interface ListAuditLogParams {
   subject?: string;
   environment?: string;
+  toolName?: string;
+  instance?: string;
   status?: string;
+  /** ISO timestamps. The console sends start-of-day / end-of-day for the
+   *  dates picked, so the server's >= / <= mean what the operator expects. */
+  since?: string;
+  until?: string;
   limit?: number;
 }
 
@@ -97,7 +103,11 @@ export function listAuditLog(params: ListAuditLogParams = {}): Promise<AuditLogE
   const qs = new URLSearchParams();
   if (params.subject) qs.set("subject", params.subject);
   if (params.environment) qs.set("environment", params.environment);
+  if (params.toolName) qs.set("tool_name", params.toolName);
+  if (params.instance) qs.set("instance", params.instance);
   if (params.status) qs.set("status", params.status);
+  if (params.since) qs.set("since", params.since);
+  if (params.until) qs.set("until", params.until);
   qs.set("limit", String(params.limit ?? 50));
   return request(`/audit-log?${qs}`);
 }

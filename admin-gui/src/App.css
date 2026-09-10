@@ -330,6 +330,25 @@ body {
 .filter-bar {
   display: flex;
   gap: 0.6rem;
+  /* Wraps because the audit filters outgrew a single row — without this
+     the later controls are pushed off the edge on a narrow window. */
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+/* Each filter is a labelled control, so the row stays readable once there
+   are more than a couple of them. */
+.filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.filter-field > span {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted, #6b6b6b);
 }
 
 .filter-bar input,

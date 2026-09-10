@@ -71,16 +71,7 @@ class AuditLogger:
             self._write_to_store(record)
 
     def _write_to_store(self, record: AuditRecord) -> None:
-        """Best-effort insert into audit-service's audit_log.
-
-        Note what is NOT persisted: AuditRecord.instance. audit_log has no
-        column for it (see audit-service/db/models.py), so on a deployment
-        reaching several EBS databases the store cannot answer "which
-        instance did this subject touch" — only stdout can. Adding the
-        column is a migration against an append-only partitioned table, so
-        it is left as a deliberate, separate decision rather than smuggled
-        in here.
-        """
+        """Best-effort insert into audit-service's audit_log."""
         try:
             with self._engine.begin() as conn:  # type: ignore[union-attr]
                 conn.execute(
@@ -95,6 +86,10 @@ class AuditLogger:
                         environment=record.environment,
                         target_system=record.target_system,
                         status=record.status,
+                        # Which EBS database the call was routed to. None is
+                        # a real answer for tools that touch no instance
+                        # (list_ebs_instances), not missing data.
+                        instance=record.instance,
                         # tuple -> list so it is JSON-encodable on both sinks.
                         effective_org_ids=list(record.effective_org_ids),
                         params=record.params,

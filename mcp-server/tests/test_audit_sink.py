@@ -65,6 +65,31 @@ def test_successful_call_is_written_to_the_store(logger, audit_engine):
     assert row["error_message"] is None
 
 
+def test_instance_is_persisted(logger, audit_engine):
+    """Which EBS database a call was routed to is the question a multi-
+    instance deployment's audit trail most needs to answer, and it used to
+    reach stdout and then be dropped on the way to the store."""
+    with logger.audit_call(
+        tool_name="tablespace_health", subject="jdoe@corp.com", environment="prod",
+        target_system="ebs_dba", params={},
+    ) as outcome:
+        outcome["instance"] = "PROD"
+
+    assert _rows(audit_engine)[0]["instance"] == "PROD"
+
+
+def test_no_instance_is_recorded_as_null_not_invented(logger, audit_engine):
+    """Tools that touch no instance (list_ebs_instances) genuinely have
+    none — that must read as absent, not be back-filled with a guess."""
+    with logger.audit_call(
+        tool_name="list_ebs_instances", subject="jdoe@corp.com", environment="prod",
+        target_system="ebs_dba", params={},
+    ):
+        pass
+
+    assert _rows(audit_engine)[0]["instance"] is None
+
+
 def test_denial_is_recorded_rather_than_lost(logger, audit_engine):
     """A rejected call is precisely what an audit trail exists to capture,
     so it must reach the store, not just the successful path."""
