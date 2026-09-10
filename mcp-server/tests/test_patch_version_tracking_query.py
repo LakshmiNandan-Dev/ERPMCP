@@ -14,21 +14,68 @@ from ebsmcp.connectors.base import validate_sql_conventions
 from ebsmcp.tools.dba.patch_version_tracking import (
     annotate_adop_sessions,
     build_adop_session_query,
-    get_patch_history_query,
+    build_patch_history_query,
 )
 
 
 @pytest.mark.parametrize(
     "view,expected_table",
-    [("applied_patches", "AD.AD_APPLIED_PATCHES"), ("product_versions", "APPLSYS.FND_PRODUCT_INSTALLATIONS")],
+    [("applied_patches", "APPS.AD_APPLIED_PATCHES"),
+     ("product_versions", "APPS.FND_PRODUCT_INSTALLATIONS")],
 )
 def test_view_selects_the_right_query(view, expected_table):
-    assert expected_table in get_patch_history_query(view)
+    sql, _ = build_patch_history_query(view)
+    assert expected_table in sql
 
 
 @pytest.mark.parametrize("view", ["applied_patches", "product_versions"])
 def test_every_view_passes_sql_conventions(view):
-    validate_sql_conventions(get_patch_history_query(view))
+    sql, _ = build_patch_history_query(view)
+    validate_sql_conventions(sql)
+
+
+@pytest.mark.parametrize("view", ["applied_patches", "product_versions"])
+def test_windowed_query_still_passes_sql_conventions(view):
+    sql, _ = build_patch_history_query(view, days=30)
+    validate_sql_conventions(sql)
+
+
+def test_no_window_returns_most_recent_without_filtering_by_date():
+    sql, binds = build_patch_history_query("applied_patches")
+    assert "WHERE" not in sql
+    assert binds == {}
+    assert "FETCH FIRST 25 ROWS ONLY" in sql
+
+
+@pytest.mark.parametrize("days", [1, 10, 30])
+def test_window_is_a_rolling_range_and_is_bound_not_interpolated(days):
+    """days=1 has to mean the last 24 hours. A YYYY-MM-DD floor could not
+    express that — the floor for today is midnight today."""
+    sql, binds = build_patch_history_query("applied_patches", days=days)
+    assert "aap.creation_date >= SYSDATE - :days" in sql
+    assert binds == {"days": days}
+    assert str(days) not in sql.split("FETCH FIRST")[0].replace(":days", "")
+
+
+def test_window_raises_the_row_cap_so_a_busy_month_is_not_truncated_at_25():
+    sql, _ = build_patch_history_query("applied_patches", days=30)
+    assert "FETCH FIRST 200 ROWS ONLY" in sql
+
+
+def test_applied_patches_does_not_join_ad_bugs():
+    """Joining AD_BUGS fans each patch out across every bug it delivers —
+    the same duplication defect fixed in concurrent_requests."""
+    sql, _ = build_patch_history_query("applied_patches")
+    assert "AD_BUGS" not in sql
+    assert "patch_name AS patch_number" in sql
+
+
+def test_product_versions_ignores_the_window():
+    """A window is meaningless for "what version is each product at" — that
+    is current state, not history."""
+    sql, binds = build_patch_history_query("product_versions", days=30)
+    assert "SYSDATE" not in sql
+    assert binds == {}
 
 
 def test_adop_session_query_without_id_fetches_recent_five():

@@ -17,12 +17,13 @@ patch registry, distinct in scope from patch_history's EBS-application-
 layer coverage. HIGH confidence, standard core Oracle view, columns
 verified against a live instance (2026-09-02).
 
-Confidence note on applied_patches (patch_history): AD.AD_APPLIED_PATCHES
-was written from memory, not verified — and the same live-instance check
-that found AD_ADOP_SESSIONS actually lives under APPLSYS (not AD; this
-instance has no AD schema at all) casts real doubt on the AD. qualifier
-here too. Flagged, not yet fixed — a separate check, since it's a
-different table.
+applied_patches (patch_history) was written from memory against an AD.
+qualifier and the doubt flagged here was justified: verified live
+(2026-09-10) there is no AD schema on this instance, so AD.AD_APPLIED_PATCHES
+and AD.AD_BUGS both raise ORA-00942 and the view could never return a row.
+AD_APPLIED_PATCHES also has neither BUG_ID nor STATUS, so the join to
+AD_BUGS could not have worked either. Both now read through APPS, which is
+the access path Oracle documents for application code.
 """
 
 from __future__ import annotations
@@ -36,31 +37,64 @@ from ebsmcp.tools.registry import ToolContext, ToolSet, resolve_scoped_call
 
 PatchHistoryView = Literal["applied_patches", "product_versions"]
 
-_PATCH_HISTORY_QUERIES: dict[PatchHistoryView, str] = {
-    "applied_patches": (
-        "SELECT aap.applied_patch_id, ab.bug_number AS patch_number, aap.creation_date, aap.status "
-        "FROM AD.AD_APPLIED_PATCHES aap "
-        "JOIN AD.AD_BUGS ab ON ab.bug_id = aap.bug_id "
+# PRODUCT_VERSION verified against a live instance (2026-09-02) — the
+# original guess (VERSION) doesn't exist on FND_PRODUCT_INSTALLATIONS
+# (ORA-00904).
+_PRODUCT_VERSIONS_QUERY = (
+    "SELECT fpi.application_id, fa.application_short_name, fpi.status, "
+    "fpi.patch_level, fpi.product_version "
+    "FROM APPS.FND_PRODUCT_INSTALLATIONS fpi "
+    "JOIN APPS.FND_APPLICATION fa ON fa.application_id = fpi.application_id "
+    "ORDER BY fa.application_short_name"
+)
+
+# Without a window this is a "most recent" list; with one it is "everything
+# in the window", which on a busy instance is many more rows than 25.
+_RECENT_PATCH_LIMIT = 25
+_WINDOWED_PATCH_LIMIT = 200
+
+
+def build_patch_history_query(
+    view: PatchHistoryView, days: int | None = None
+) -> tuple[str, dict[str, Any]]:
+    """SQL + binds for one patch_history view.
+
+    days is a ROLLING window (SYSDATE - N), not a date floor, because the
+    questions people actually ask are "in the last 30 days" and "in the last
+    24 hours". A YYYY-MM-DD floor like concurrent_requests' `since` cannot
+    express the second one at all: the floor for today is midnight today,
+    which is not the last 24 hours. days=1 is exactly 24 hours back.
+
+    No column here is interpolated — the window is bound, so a caller cannot
+    reach the SQL text.
+
+    Pure function, unit-tested directly — see
+    test_patch_version_tracking_query.py.
+    """
+    if view == "product_versions":
+        return _PRODUCT_VERSIONS_QUERY, {}
+
+    binds: dict[str, Any] = {}
+    where = ""
+    limit = _RECENT_PATCH_LIMIT
+    if days is not None:
+        where = "WHERE aap.creation_date >= SYSDATE - :days "
+        binds["days"] = days
+        limit = _WINDOWED_PATCH_LIMIT
+
+    # PATCH_NAME is the patch number a DBA asks about ("36839803"); columns
+    # verified live (2026-09-10). No join to AD_BUGS: it would fan each patch
+    # out across every bug it delivers, the same defect fixed in
+    # concurrent_requests.
+    sql = (
+        "SELECT aap.applied_patch_id, aap.patch_name AS patch_number, aap.patch_type, "
+        "aap.maint_pack_level, aap.creation_date "
+        "FROM APPS.AD_APPLIED_PATCHES aap "
+        f"{where}"
         "ORDER BY aap.creation_date DESC "
-        "FETCH FIRST 25 ROWS ONLY"
-    ),
-    # PRODUCT_VERSION verified against a live instance (2026-09-02) — the
-    # original guess (VERSION) doesn't exist on FND_PRODUCT_INSTALLATIONS
-    # (ORA-00904).
-    "product_versions": (
-        "SELECT fpi.application_id, fa.application_short_name, fpi.status, "
-        "fpi.patch_level, fpi.product_version "
-        "FROM APPLSYS.FND_PRODUCT_INSTALLATIONS fpi "
-        "JOIN APPLSYS.FND_APPLICATION fa ON fa.application_id = fpi.application_id "
-        "ORDER BY fa.application_short_name"
-    ),
-}
-
-
-def get_patch_history_query(view: PatchHistoryView) -> str:
-    """Pure function, unit-tested directly — see
-    test_patch_version_tracking_query.py."""
-    return _PATCH_HISTORY_QUERIES[view]
+        f"FETCH FIRST {limit} ROWS ONLY"
+    )
+    return sql, binds
 
 
 _ADOP_PHASE_COLUMNS = (
@@ -152,20 +186,35 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             idempotent_hint=True,
         )
     )
-    def patch_history(view: PatchHistoryView = "applied_patches", instance: str | None = None) -> dict:
-        """List the 25 most recently applied patches (applied_patches —
-        classic 11i/R12.1-style patch history, not R12.2/ADOP-aware), or
-        current release/patchset level per product (product_versions).
-        Defaults to applied_patches. Call list_ebs_instances first if unsure which EBS instance names (e.g. PROD, UAT) this deployment has configured."""
+    def patch_history(
+        view: PatchHistoryView = "applied_patches",
+        days: int | None = None,
+        instance: str | None = None,
+    ) -> dict:
+        """WHICH PATCHES have been applied, and when (applied_patches), or
+        the current release/patchset level per product (product_versions).
+        Defaults to applied_patches.
+
+        Use days for "in the last N days": days=30 for the last 30 days,
+        days=10 for the last 10, days=1 for the last 24 hours. Without days
+        it returns the 25 most recent patches regardless of age.
+
+        This is the tool for "what patches were applied recently".
+        adop_session_status is NOT — that reports the progress of R12.2
+        patching SESSIONS (prepare/apply/cutover), not which patches they
+        delivered. Call list_ebs_instances first if unsure which EBS instance names (e.g. PROD, UAT) this deployment has configured."""
         with resolve_scoped_call(
-            ctx, tool_name="patch_history", target_system="ebs_dba", params={"view": view},
+            ctx, tool_name="patch_history", target_system="ebs_dba",
+            params={"view": view, "days": days},
             requested_instance=instance,
         ) as (identity, _effective_org_ids, connector):
-            rows = connector.run(get_patch_history_query(view))
+            sql, binds = build_patch_history_query(view, days)
+            rows = connector.run(sql, binds)
             return {
                 "environment": ctx.environment,
                 "mapped_role": identity.mapped_role,
                 "view": view,
+                "window_days": days,
                 "results": rows,
             }
 
@@ -233,8 +282,11 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
         )
     )
     def adop_session_status(session_id: int | None = None, instance: str | None = None) -> dict:
-        """Report ADOP (R12.2 online patching) session status: the 5
+        """Report ADOP (R12.2 online patching) SESSION progress: the 5
         most recent sessions by default, or one specific session by ID.
+        This reports how patching runs progressed, NOT which patches were
+        applied — for "what patches were applied in the last N days", use
+        patch_history with days=N.
         ADOP enforces a single in-progress session per instance, so the
         most recent session is always the active one if any is — a
         session with status "R" is actively running right now; "C"
