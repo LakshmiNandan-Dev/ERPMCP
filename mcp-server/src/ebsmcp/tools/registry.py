@@ -211,3 +211,45 @@ def resolve_scoped_call(
         outcome["instance"] = instance
 
         yield identity, effective_org_ids, ctx.connectors[instance]
+
+
+# ── Row caps and honest totals ────────────────────────────────────────────────
+
+TOTAL_COUNT_COLUMN = "total_count"
+
+# Every list-shaped tool caps its rows, which is right — an uncapped query
+# against a real instance is the active_sessions incident waiting to happen.
+# But a cap without a total is actively misleading: 50 rows back from 688
+# failed requests, or from 191,701 open logins, reads as the whole answer and
+# there is nothing in the response to say otherwise. Adding COUNT(*) OVER ()
+# to the SELECT gives the true pre-cap total in the same round trip — measured
+# on a live instance at no extra cost, and no slower even on the one query
+# whose LEFT JOIN against GV$SESSION this catalog warns about.
+#
+# NOT safe on a SELECT DISTINCT query. The window function is evaluated before
+# DISTINCT is applied, so it reports the pre-deduplication row count — verified
+# live: DISTINCT owner over invalid objects returned total_count=200 when only
+# 7 distinct owners exist. Use a COUNT(*) over a subquery there instead.
+# It IS correct with GROUP BY, where it counts groups (verified: 77 groups,
+# 77 distinct sids), which is what "how many rows would I have got" means.
+
+
+def split_total_count(rows: list[dict]) -> tuple[list[dict], int | None]:
+    """Lift the windowed total out of the rows and hand back both.
+
+    Returns the rows with TOTAL_COUNT_COLUMN stripped, plus the total. The
+    column is removed rather than left in place because it repeats identically
+    on every row, and these payloads are read by a model with a context budget
+    — one number belongs in the envelope, not duplicated fifty times.
+
+    Returns None for the total when the column isn't present, so a query that
+    hasn't been given a windowed count (or one that returned no rows at all)
+    still passes through this untouched.
+    """
+    if not rows:
+        return rows, None
+    if TOTAL_COUNT_COLUMN not in rows[0]:
+        return rows, None
+    total = rows[0][TOTAL_COUNT_COLUMN]
+    stripped = [{k: v for k, v in row.items() if k != TOTAL_COUNT_COLUMN} for row in rows]
+    return stripped, int(total) if total is not None else None

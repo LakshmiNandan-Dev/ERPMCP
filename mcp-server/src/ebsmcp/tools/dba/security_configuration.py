@@ -40,7 +40,12 @@ from typing import Any, Literal
 from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
-from ebsmcp.tools.registry import ToolContext, ToolSet, resolve_scoped_call
+from ebsmcp.tools.registry import (
+    ToolContext,
+    ToolSet,
+    resolve_scoped_call,
+    split_total_count,
+)
 
 # See lookup.py's own comment: worth cross-checking against
 # FND_PROFILE_OPTION_LEVELS on a real instance rather than trusting blindly.
@@ -94,7 +99,7 @@ def build_db_privilege_grants_query(
 
     if view == "system_privs":
         sql = (
-            "SELECT grantee, privilege, admin_option "
+            "SELECT grantee, privilege, admin_option, COUNT(*) OVER () AS total_count "
             "FROM DBA_SYS_PRIVS "
             f"{where}"
             "ORDER BY grantee, privilege "
@@ -102,7 +107,8 @@ def build_db_privilege_grants_query(
         )
     else:
         sql = (
-            "SELECT grantee, owner, table_name, privilege, grantable "
+            "SELECT grantee, owner, table_name, privilege, grantable, "
+            "COUNT(*) OVER () AS total_count "
             "FROM DBA_TAB_PRIVS "
             f"{where}"
             "ORDER BY grantee, owner, table_name "
@@ -142,7 +148,7 @@ LoginSessionsView = Literal["active", "closed"]
 
 _LOGIN_SESSIONS_QUERIES: dict[LoginSessionsView, str] = {
     "active": (
-        "SELECT fu.user_name, fl.start_time, fl.pid "
+        "SELECT fu.user_name, fl.start_time, fl.pid, COUNT(*) OVER () AS total_count "
         "FROM APPLSYS.FND_LOGINS fl "
         "JOIN APPLSYS.FND_USER fu ON fu.user_id = fl.user_id "
         "WHERE fl.end_time IS NULL "
@@ -150,7 +156,8 @@ _LOGIN_SESSIONS_QUERIES: dict[LoginSessionsView, str] = {
         "FETCH FIRST 50 ROWS ONLY"
     ),
     "closed": (
-        "SELECT fu.user_name, fl.start_time, fl.end_time, fl.pid "
+        "SELECT fu.user_name, fl.start_time, fl.end_time, fl.pid, "
+        "COUNT(*) OVER () AS total_count "
         "FROM APPLSYS.FND_LOGINS fl "
         "JOIN APPLSYS.FND_USER fu ON fu.user_id = fl.user_id "
         "WHERE fl.end_time IS NOT NULL "
@@ -240,7 +247,7 @@ def build_responsibility_assignments_query(
 
     sql = (
         "SELECT fu.user_name, fr.responsibility_id, fr.application_id, frt.responsibility_name, "
-        "urg.start_date, urg.end_date "
+        "urg.start_date, urg.end_date, COUNT(*) OVER () AS total_count "
         "FROM APPLSYS.FND_USER fu "
         "JOIN APPLSYS.FND_USER_RESP_GROUPS urg ON urg.user_id = fu.user_id "
         "JOIN APPLSYS.FND_RESPONSIBILITY fr "
@@ -387,12 +394,13 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             requested_instance=instance,
         ) as (identity, _effective_org_ids, connector):
             sql, binds = build_responsibility_assignments_query(username, responsibility_name)
-            rows = connector.run(sql, binds)
+            rows, total = split_total_count(connector.run(sql, binds))
             return {
                 "environment": ctx.environment,
                 "mapped_role": identity.mapped_role,
                 "username": username,
                 "responsibility_name": responsibility_name,
+                "total_count": total,
                 "results": rows,
             }
 
@@ -489,11 +497,12 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             ctx, tool_name="login_sessions", target_system="ebs_dba", params={"view": view},
             requested_instance=instance,
         ) as (identity, _effective_org_ids, connector):
-            rows = connector.run(get_login_sessions_query(view))
+            rows, total = split_total_count(connector.run(get_login_sessions_query(view)))
             return {
                 "environment": ctx.environment,
                 "mapped_role": identity.mapped_role,
                 "view": view,
+                "total_count": total,
                 "results": rows,
             }
 
@@ -601,10 +610,11 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             requested_instance=instance,
         ) as (identity, _effective_org_ids, connector):
             sql, binds = build_db_privilege_grants_query(view, grantee)
-            rows = connector.run(sql, binds)
+            rows, total = split_total_count(connector.run(sql, binds))
             return {
                 "environment": ctx.environment,
                 "mapped_role": identity.mapped_role,
+                "total_count": total,
                 "view": view,
                 "grantee": grantee,
                 "grants": rows,

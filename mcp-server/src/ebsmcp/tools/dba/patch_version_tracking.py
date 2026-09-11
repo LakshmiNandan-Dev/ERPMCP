@@ -33,7 +33,7 @@ from typing import Any, Literal
 from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
-from ebsmcp.tools.registry import ToolContext, ToolSet, resolve_scoped_call
+from ebsmcp.tools.registry import ToolContext, ToolSet, resolve_scoped_call, split_total_count
 
 PatchHistoryView = Literal["applied_patches", "product_versions"]
 
@@ -95,7 +95,7 @@ def build_patch_history_query(
     # concurrent_requests.
     sql = (
         "SELECT aap.applied_patch_id, aap.patch_name AS patch_number, aap.patch_type, "
-        "aap.maint_pack_level, aap.creation_date "
+        "aap.maint_pack_level, aap.creation_date, COUNT(*) OVER () AS total_count "
         "FROM APPS.AD_APPLIED_PATCHES aap "
         f"{where}"
         "ORDER BY aap.creation_date DESC "
@@ -145,7 +145,8 @@ def build_patch_applied_query(patch_number: str) -> tuple[str, dict[str, Any]]:
     """
     sql = (
         "SELECT ab.bug_number, ab.application_short_name, ab.creation_date, "
-        "ab.bug_status, ab.success_flag, ab.aru_release_name, ab.language "
+        "ab.bug_status, ab.success_flag, ab.aru_release_name, ab.language, "
+        "COUNT(*) OVER () AS total_count "
         "FROM APPS.AD_BUGS ab "
         "WHERE ab.bug_number = :patch_number "
         "ORDER BY ab.creation_date DESC "
@@ -311,12 +312,13 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             requested_instance=instance,
         ) as (identity, _effective_org_ids, connector):
             sql, binds = build_patch_history_query(view, days)
-            rows = connector.run(sql, binds)
+            rows, total = split_total_count(connector.run(sql, binds))
             return {
                 "environment": ctx.environment,
                 "mapped_role": identity.mapped_role,
                 "view": view,
                 "window_days": days,
+                "total_count": total,
                 "results": rows,
             }
 
@@ -441,7 +443,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             requested_instance=instance,
         ) as (identity, _effective_org_ids, connector):
             sql, binds = build_patch_applied_query(patch_number)
-            rows = connector.run(sql, binds)
+            rows, total = split_total_count(connector.run(sql, binds))
             applied, summary = summarize_patch_applied(patch_number, rows)
             return {
                 "environment": ctx.environment,
@@ -449,6 +451,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
                 "patch_number": binds["patch_number"],
                 "applied": applied,
                 "summary": summary,
+                "total_count": total,
                 "occurrences": rows,
             }
 

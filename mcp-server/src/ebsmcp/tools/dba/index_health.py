@@ -23,7 +23,7 @@ from __future__ import annotations
 from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
-from ebsmcp.tools.registry import ToolContext, ToolSet, resolve_scoped_call
+from ebsmcp.tools.registry import ToolContext, ToolSet, resolve_scoped_call, split_total_count
 
 
 def _register(app: MCPServer, ctx: ToolContext) -> None:
@@ -42,16 +42,18 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             ctx, tool_name="unusable_indexes", target_system="ebs_dba", params={},
             requested_instance=instance,
         ) as (identity, _effective_org_ids, connector):
-            rows = connector.run(
-                "SELECT owner, index_name, table_owner, table_name, status "
+            rows, total = split_total_count(connector.run(
+                "SELECT owner, index_name, table_owner, table_name, status, "
+                "COUNT(*) OVER () AS total_count "
                 "FROM DBA_INDEXES "
                 "WHERE status = 'UNUSABLE' "
                 "ORDER BY owner, index_name "
                 "FETCH FIRST 50 ROWS ONLY"
-            )
+            ))
             return {
                 "environment": ctx.environment,
                 "mapped_role": identity.mapped_role,
+                "total_count": total,
                 "unusable_indexes": rows,
             }
 
@@ -70,9 +72,9 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             ctx, tool_name="non_indexed_foreign_keys", target_system="ebs_dba", params={},
             requested_instance=instance,
         ) as (identity, _effective_org_ids, connector):
-            rows = connector.run(
+            rows, total = split_total_count(connector.run(
                 "SELECT fk.owner, fk.table_name, fk.constraint_name AS fk_constraint_name, "
-                "fk.column_name "
+                "fk.column_name, COUNT(*) OVER () AS total_count "
                 "FROM DBA_CONS_COLUMNS fk "
                 "JOIN DBA_CONSTRAINTS c "
                 "  ON c.owner = fk.owner AND c.constraint_name = fk.constraint_name "
@@ -87,10 +89,11 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
                 "  ) "
                 "ORDER BY fk.owner, fk.table_name "
                 "FETCH FIRST 100 ROWS ONLY"
-            )
+            ))
             return {
                 "environment": ctx.environment,
                 "mapped_role": identity.mapped_role,
+                "total_count": total,
                 "non_indexed_foreign_keys": rows,
             }
 

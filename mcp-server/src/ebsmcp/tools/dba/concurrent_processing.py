@@ -28,7 +28,7 @@ from typing import Any, Literal
 from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
-from ebsmcp.tools.registry import ToolContext, ToolSet, resolve_scoped_call
+from ebsmcp.tools.registry import ToolContext, ToolSet, resolve_scoped_call, split_total_count
 
 RequestStatus = Literal["running", "pending", "on_hold", "completed", "failed"]
 
@@ -129,7 +129,7 @@ def build_query(
         "fcr.phase_code, fcr.status_code, fcr.actual_start_date, fcr.actual_completion_date, "
         "ROUND((NVL(fcr.actual_completion_date, SYSDATE) - fcr.actual_start_date) * 24 * 60, 1) "
         "AS elapsed_minutes, "
-        "fu.user_name AS requested_by, "
+        "fu.user_name AS requested_by, COUNT(*) OVER () AS total_count, "
         f"{session_columns}"
         "FROM APPLSYS.FND_CONCURRENT_REQUESTS fcr "
         f"{program_join}"
@@ -146,7 +146,9 @@ def build_query(
     return sql, binds
 
 
-def summarize_concurrent_requests(rows: list[dict], status: RequestStatus) -> str:
+def summarize_concurrent_requests(
+    rows: list[dict], status: RequestStatus, total: int | None = None
+) -> str:
     """Turns a page of individual rows into the one-line answer "how has
     this actually been running" — count plus avg/min/max elapsed_minutes
     among whatever rows came back. Computed in Python from the already-
@@ -161,11 +163,23 @@ def summarize_concurrent_requests(rows: list[dict], status: RequestStatus) -> st
     if not rows:
         return f"No {status} requests found"
 
+    # Say so when the cap hid rows. "50 failed request(s)" read as the whole
+    # picture when 688 matched — the count a DBA acts on has to be the real
+    # one, and the stats below describe only the page that came back.
+    shown = f"Showing {len(rows)} of {total} " if total is not None and total > len(rows) else ""
+
     durations = [r["elapsed_minutes"] for r in rows if r.get("elapsed_minutes") is not None]
     if not durations:
+        if shown:
+            return f"{shown}{status} request(s) (no elapsed time available yet)"
         return f"{len(rows)} {status} request(s) found (no elapsed time available yet)"
 
     avg = sum(durations) / len(durations)
+    if shown:
+        return (
+            f"{shown}{status} request(s) — of the {len(rows)} shown: "
+            f"avg {avg:.1f} min, min {min(durations):.1f} min, max {max(durations):.1f} min"
+        )
     return (
         f"{len(rows)} {status} request(s) — "
         f"avg {avg:.1f} min, min {min(durations):.1f} min, max {max(durations):.1f} min"
@@ -293,7 +307,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             requested_instance=instance,
         ) as (identity, _effective_org_ids, connector):
             sql, binds = build_query(status, requested_by, since, program_name)
-            rows = connector.run(sql, binds)
+            rows, total = split_total_count(connector.run(sql, binds))
 
             return {
                 "environment": ctx.environment,
@@ -304,7 +318,8 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
                     "since": since,
                     "program_name": program_name,
                 },
-                "summary": summarize_concurrent_requests(rows, status),
+                "total_count": total,
+                "summary": summarize_concurrent_requests(rows, status, total),
                 "requests": rows,
             }
 

@@ -43,6 +43,7 @@ from ebsmcp.tools.registry import (
     permitted_instances,
     resolve_identity_only,
     resolve_scoped_call,
+    split_total_count,
 )
 
 TablespaceView = Literal["usage", "datafile_headroom", "status"]
@@ -222,7 +223,8 @@ def build_object_errors_query(
     where_clause = f"WHERE {' AND '.join(where)} " if where else ""
 
     sql = (
-        "SELECT owner, name, type, sequence, line, position, attribute, text "
+        "SELECT owner, name, type, sequence, line, position, attribute, text, "
+        "COUNT(*) OVER () AS total_count "
         "FROM DBA_ERRORS "
         f"{where_clause}"
         "ORDER BY owner, name, type, sequence "
@@ -231,7 +233,9 @@ def build_object_errors_query(
     return sql, binds
 
 
-def summarize_object_errors(rows: list[dict], attribute: str | None) -> str:
+def summarize_object_errors(
+    rows: list[dict], attribute: str | None, total: int | None = None
+) -> str:
     """The empty case carries the actual diagnostic value here: an object
     that is INVALID with no rows in DBA_ERRORS was invalidated by a
     dependency change, not broken — it recompiles on next reference or
@@ -248,7 +252,16 @@ def summarize_object_errors(rows: list[dict], attribute: str | None) -> str:
         )
     objects = {(row.get("owner"), row.get("name"), row.get("type")) for row in rows}
     summary = f"{len(objects)} object(s) with {len(rows)} error line(s)"
-    if len(rows) >= _OBJECT_ERRORS_ROW_CAP:
+    if total is not None and total > len(rows):
+        # The real figure, not merely an admission that something was hidden:
+        # "truncated at 100" left the reader no way to tell 101 error lines
+        # from 10,000.
+        summary += (
+            f" — showing {len(rows)} of {total}, capped at "
+            f"{_OBJECT_ERRORS_ROW_CAP}. Narrow by object_name, object_type "
+            "or owner to see the rest"
+        )
+    elif len(rows) >= _OBJECT_ERRORS_ROW_CAP:
         summary += (
             f" (truncated at {_OBJECT_ERRORS_ROW_CAP} rows — narrow by "
             "object_name, object_type or owner to see the rest)"
@@ -308,7 +321,8 @@ def build_open_cursors_query(sid: int | None) -> tuple[str, dict[str, Any]]:
         binds["sid"] = sid
     else:
         sql = (
-            "SELECT inst_id, sid, user_name, COUNT(*) AS open_cursor_count "
+            "SELECT inst_id, sid, user_name, COUNT(*) AS open_cursor_count, "
+            "COUNT(*) OVER () AS total_count "
             "FROM GV$OPEN_CURSOR "
             "GROUP BY inst_id, sid, user_name "
             "ORDER BY open_cursor_count DESC "
@@ -357,7 +371,7 @@ DbSessionStatus = Literal["active", "inactive", "all"]
 _DB_SESSION_STATUS_QUERIES: dict[DbSessionStatus, str] = {
     "active": (
         "SELECT inst_id, sid, serial#, username, status, machine, program, module, "
-        "logon_time, last_call_et "
+        "logon_time, last_call_et, COUNT(*) OVER () AS total_count "
         "FROM GV$SESSION "
         "WHERE status = 'ACTIVE' AND type = 'USER' "
         "ORDER BY last_call_et DESC "
@@ -365,7 +379,7 @@ _DB_SESSION_STATUS_QUERIES: dict[DbSessionStatus, str] = {
     ),
     "inactive": (
         "SELECT inst_id, sid, serial#, username, status, machine, program, module, "
-        "logon_time, last_call_et "
+        "logon_time, last_call_et, COUNT(*) OVER () AS total_count "
         "FROM GV$SESSION "
         "WHERE status = 'INACTIVE' AND type = 'USER' "
         "ORDER BY last_call_et DESC "
@@ -373,7 +387,7 @@ _DB_SESSION_STATUS_QUERIES: dict[DbSessionStatus, str] = {
     ),
     "all": (
         "SELECT inst_id, sid, serial#, username, status, machine, program, module, "
-        "logon_time, last_call_et "
+        "logon_time, last_call_et, COUNT(*) OVER () AS total_count "
         "FROM GV$SESSION "
         "WHERE type = 'USER' "
         "ORDER BY status, last_call_et DESC "
@@ -697,7 +711,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             requested_instance=instance,
         ) as (identity, _effective_org_ids, connector):
             sql, binds = build_object_errors_query(object_name, object_type, owner, attribute)
-            rows = connector.run(sql, binds)
+            rows, total = split_total_count(connector.run(sql, binds))
             return {
                 "environment": ctx.environment,
                 "mapped_role": identity.mapped_role,
@@ -707,7 +721,8 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
                     "owner": owner,
                     "attribute": attribute,
                 },
-                "summary": summarize_object_errors(rows, attribute),
+                "total_count": total,
+                "summary": summarize_object_errors(rows, attribute, total),
                 "errors": rows,
             }
 
@@ -787,16 +802,18 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             ctx, tool_name="stale_statistics", target_system="ebs_dba", params={},
             requested_instance=instance,
         ) as (identity, _effective_org_ids, connector):
-            rows = connector.run(
-                "SELECT owner, table_name, last_analyzed, stale_stats "
+            rows, total = split_total_count(connector.run(
+                "SELECT owner, table_name, last_analyzed, stale_stats, "
+                "COUNT(*) OVER () AS total_count "
                 "FROM DBA_TAB_STATISTICS "
                 "WHERE stale_stats = 'YES' OR last_analyzed < SYSDATE - 30 OR last_analyzed IS NULL "
                 "ORDER BY last_analyzed NULLS FIRST "
                 "FETCH FIRST 50 ROWS ONLY"
-            )
+            ))
             return {
                 "environment": ctx.environment,
                 "mapped_role": identity.mapped_role,
+                "total_count": total,
                 "stale_tables": rows,
             }
 
@@ -869,16 +886,18 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             ctx, tool_name="alert_log_errors", target_system="ebs_dba", params={},
             requested_instance=instance,
         ) as (identity, _effective_org_ids, connector):
-            rows = connector.run(
-                "SELECT inst_id, originating_timestamp, message_text "
+            rows, total = split_total_count(connector.run(
+                "SELECT inst_id, originating_timestamp, message_text, "
+                "COUNT(*) OVER () AS total_count "
                 "FROM GV$DIAG_ALERT_EXT "
                 "WHERE message_text LIKE '%ORA-%' AND originating_timestamp >= SYSDATE - 1 "
                 "ORDER BY originating_timestamp DESC "
                 "FETCH FIRST 50 ROWS ONLY"
-            )
+            ))
             return {
                 "environment": ctx.environment,
                 "mapped_role": identity.mapped_role,
+                "total_count": total,
                 "alert_log_entries": rows,
             }
 
@@ -951,11 +970,12 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             requested_instance=instance,
         ) as (identity, _effective_org_ids, connector):
             sql, binds = build_open_cursors_query(sid)
-            rows = connector.run(sql, binds)
+            rows, total = split_total_count(connector.run(sql, binds))
             return {
                 "environment": ctx.environment,
                 "mapped_role": identity.mapped_role,
                 "sid": sid,
+                "total_count": total,
                 "results": rows,
             }
 
@@ -1007,16 +1027,17 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             ctx, tool_name="recyclebin", target_system="ebs_dba", params={},
             requested_instance=instance,
         ) as (identity, _effective_org_ids, connector):
-            rows = connector.run(
+            rows, total = split_total_count(connector.run(
                 "SELECT owner, object_name, original_name, operation, type, ts_name, "
-                "createtime, droptime, space "
+                "createtime, droptime, space, COUNT(*) OVER () AS total_count "
                 "FROM DBA_RECYCLEBIN "
                 "ORDER BY droptime DESC "
                 "FETCH FIRST 50 ROWS ONLY"
-            )
+            ))
             return {
                 "environment": ctx.environment,
                 "mapped_role": identity.mapped_role,
+                "total_count": total,
                 "recyclebin_objects": rows,
             }
 
@@ -1036,8 +1057,9 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             ctx, tool_name="dangling_synonyms", target_system="ebs_dba", params={},
             requested_instance=instance,
         ) as (identity, _effective_org_ids, connector):
-            rows = connector.run(
-                "SELECT s.owner, s.synonym_name, s.table_owner, s.table_name, s.db_link "
+            rows, total = split_total_count(connector.run(
+                "SELECT s.owner, s.synonym_name, s.table_owner, s.table_name, s.db_link, "
+                "COUNT(*) OVER () AS total_count "
                 "FROM DBA_SYNONYMS s "
                 "WHERE s.db_link IS NULL "
                 "  AND NOT EXISTS ( "
@@ -1046,10 +1068,11 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
                 "  ) "
                 "ORDER BY s.owner, s.synonym_name "
                 "FETCH FIRST 50 ROWS ONLY"
-            )
+            ))
             return {
                 "environment": ctx.environment,
                 "mapped_role": identity.mapped_role,
+                "total_count": total,
                 "dangling_synonyms": rows,
             }
 
@@ -1099,11 +1122,12 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             ctx, tool_name="db_session_status", target_system="ebs_dba", params={"status": status},
             requested_instance=instance,
         ) as (identity, _effective_org_ids, connector):
-            rows = connector.run(get_db_session_status_query(status))
+            rows, total = split_total_count(connector.run(get_db_session_status_query(status)))
             return {
                 "environment": ctx.environment,
                 "mapped_role": identity.mapped_role,
                 "status": status,
+                "total_count": total,
                 "results": rows,
             }
 
