@@ -68,6 +68,13 @@ def build_patch_history_query(
     No column here is interpolated — the window is bound, so a caller cannot
     reach the SQL text.
 
+    Window verified two-sided against a live instance (2026-09-11), because
+    "every window returns zero rows" is equally the signature of a correct
+    filter on an instance with no recent patches and of a WHERE clause that
+    never matches. With the newest patch 413 days old: days=408 returned
+    nothing, days=418 returned 7, days=500 returned 40, days=2000 returned
+    80. The boundary sits where it should and widens monotonically.
+
     Pure function, unit-tested directly — see
     test_patch_version_tracking_query.py.
     """
@@ -103,6 +110,13 @@ def build_patch_history_query(
 # "is 36839803 applied?" returns a false negative. AD_BUGS carries a row for
 # every bug a patch delivered, which is why it is the check EBS DBAs actually
 # run and the only one that answers this question correctly.
+#
+# Measured on a live instance (2026-09-11): 511,188 distinct bug numbers in
+# AD_BUGS against 2,865 distinct patch names in AD_APPLIED_PATCHES — 508,518
+# of those bugs, 99.5%, have no matching top-level patch at all. Answering
+# this question from AD_APPLIED_PATCHES would therefore be wrong far more
+# often than right, and wrong in the dangerous direction: confidently
+# negative about a patch that is in fact applied.
 _PATCH_APPLIED_LIMIT = 50
 
 
@@ -146,8 +160,12 @@ def summarize_patch_applied(patch_number: str, rows: list[dict]) -> tuple[bool, 
     this catalog.
 
     Existence is what decides it, which also makes the answer immune to a row
-    appearing more than once (AD_BUGS carries a row per product and language,
-    and on an edition-enabled instance may carry more than one per edition).
+    appearing more than once. AD_BUGS does repeat: 591,290 rows against
+    511,189 distinct (bug_number, application_short_name, language) on a live
+    instance (2026-09-11), so roughly 1.16 rows per combination. It is NOT
+    edition-duplicated, though — APPS and APPLSYS return identical counts
+    there, unlike FND_CONCURRENT_PROGRAMS_TL, which doubles. Either way the
+    verdict cannot be inflated by a repeat, only the occurrence count can.
 
     Pure function, unit-tested directly.
     """
