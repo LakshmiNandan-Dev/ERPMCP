@@ -112,3 +112,18 @@ export interface AuditLogEntry {
   error_message: string | null;
   latency_ms: number;
 }
+
+// Mirrors management-api/app/schemas/branding.py. Every field is nullable:
+// an unconfigured deployment is a normal state, and the header falls back to
+// the product default rather than treating it as an error.
+export interface Branding {
+  company_name: string | null;
+  logo_data_uri: string | null;
+  updated_at: string | null;
+  updated_by: string | null;
+}
+
+export interface BrandingInput {
+  company_name: string | null;
+  logo_data_uri: string | null;
+}

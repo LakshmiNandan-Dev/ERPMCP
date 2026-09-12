@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import audit_log, auth, ebs_lookup, entra_config, identity_mappings
+from app.routers import audit_log, auth, branding, ebs_lookup, entra_config, identity_mappings
 
 app = FastAPI(title="EBSMCP Management API")
 
@@ -23,6 +23,7 @@ app.include_router(audit_log.router)
 app.include_router(entra_config.router)
 app.include_router(ebs_lookup.router)
 app.include_router(auth.router)
+app.include_router(branding.router)
 
 
 @app.get("/health")

@@ -26,6 +26,7 @@ from sqlalchemy import (
     MetaData,
     String,
     Table,
+    Text,
 )
 from sqlalchemy.dialects import oracle
 
@@ -91,6 +92,19 @@ admin_accounts = Table(
     Column("is_active", Boolean, nullable=False),
     Column("created_at", TZDateTime, nullable=False),
     Column("created_by", String(320), nullable=True),
+    Column("updated_at", TZDateTime, nullable=True),
+    Column("updated_by", String(320), nullable=True),
+)
+
+
+# Branding for this deployment's admin console — see identity-service's
+# models.py for why it is a single row and why the logo is an inline data URI.
+branding = Table(
+    "branding",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("company_name", String(120), nullable=True),
+    Column("logo_data_uri", Text, nullable=True),
     Column("updated_at", TZDateTime, nullable=True),
     Column("updated_by", String(320), nullable=True),
 )

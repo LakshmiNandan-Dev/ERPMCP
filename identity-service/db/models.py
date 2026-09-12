@@ -34,6 +34,7 @@ from sqlalchemy import (
     MetaData,
     String,
     Table,
+    Text,
     UniqueConstraint,
     false,
     func,
@@ -316,4 +317,31 @@ admin_accounts = Table(
     Column("updated_at", TZDateTime, nullable=True, onupdate=func.now()),
     Column("updated_by", String(320), nullable=True),
     UniqueConstraint("username", name="ux_admin_accounts_username"),
+)
+
+
+# Per-deployment branding for the admin console. Lives here rather than in a
+# VITE_ build arg because those are baked into the admin-gui image at build
+# time: telling a customer to rebuild a container to change their own logo is
+# not a branding feature. This product is licensed per client, so each
+# deployment has to be able to wear its own name without a rebuild.
+#
+# Single row, enforced by the CHECK below rather than by convention — there is
+# no per-environment dimension here (unlike entra_registrations): one
+# deployment serves one customer, and a logo that changed between dev and prod
+# would be a bug, not a feature.
+#
+# logo is a base64 data URI in a text column, not a file path or an external
+# URL. A file upload would need a writable volume and a static route that
+# neither service has, and a URL would break in exactly the air-gapped
+# customer networks this product is built to run in.
+branding = Table(
+    "branding",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("company_name", String(120), nullable=True),
+    Column("logo_data_uri", Text, nullable=True),
+    Column("updated_at", TZDateTime, nullable=True, onupdate=func.now()),
+    Column("updated_by", String(320), nullable=True),
+    CheckConstraint("id = 1", name="ck_branding_single_row"),
 )

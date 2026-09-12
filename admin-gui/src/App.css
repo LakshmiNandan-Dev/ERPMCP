@@ -43,6 +43,39 @@ body {
   margin: 0;
 }
 
+.app-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+/* Height-constrained, width auto: a customer logo can be any aspect ratio and
+   must not be able to distort the header or push the sign-in bar off-screen. */
+.app-logo {
+  height: 2rem;
+  width: auto;
+  max-width: 12rem;
+  object-fit: contain;
+}
+
+.branding-preview {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin: 0.4rem 0;
+}
+
+.branding-preview img {
+  height: 2.5rem;
+  width: auto;
+  max-width: 14rem;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.3rem;
+  background: var(--paper-raised);
+}
+
 .admin-subject-bar {
   display: flex;
   align-items: center;

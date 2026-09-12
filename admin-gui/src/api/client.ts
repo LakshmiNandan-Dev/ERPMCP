@@ -1,5 +1,7 @@
 import type {
   AssignedOrganization,
+  Branding,
+  BrandingInput,
   AssignedResponsibility,
   AuditLogEntry,
   Environment,
@@ -156,4 +158,15 @@ export function login(username: string, password: string): Promise<LoginResponse
     method: "POST",
     body: JSON.stringify({ username, password }),
   });
+}
+
+// Unauthenticated by design — the header renders before sign-in, so this is
+// the one read that must work with no credentials. authHeaders is simply
+// empty at that point; no special-casing needed here.
+export function getBranding(): Promise<Branding> {
+  return request("/branding");
+}
+
+export function putBranding(body: BrandingInput): Promise<Branding> {
+  return request("/branding", { method: "PUT", body: JSON.stringify(body) });
 }
