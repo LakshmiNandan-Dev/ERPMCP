@@ -103,6 +103,7 @@ branding = Table(
     "branding",
     metadata,
     Column("id", Integer, primary_key=True),
+    Column("site_name", String(120), nullable=True),
     Column("company_name", String(120), nullable=True),
     Column("logo_data_uri", Text, nullable=True),
     Column("updated_at", TZDateTime, nullable=True),

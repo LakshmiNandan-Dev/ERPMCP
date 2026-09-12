@@ -28,7 +28,7 @@ router = APIRouter(prefix="/branding", tags=["branding"])
 _SINGLETON_ID = 1
 
 _UNCONFIGURED = BrandingOut(
-    company_name=None, logo_data_uri=None, updated_at=None, updated_by=None
+    site_name=None, company_name=None, logo_data_uri=None, updated_at=None, updated_by=None
 )
 
 
@@ -51,6 +51,7 @@ def put_branding(body: BrandingInput, subject: str = Depends(admin_subject)) -> 
         ).scalar_one_or_none()
 
         values = {
+            "site_name": body.site_name,
             "company_name": body.company_name,
             "logo_data_uri": body.logo_data_uri,
             # Set explicitly rather than relying on onupdate=, same as

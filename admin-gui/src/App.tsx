@@ -26,14 +26,30 @@ function App() {
       .catch(() => setBranding(null));
   }, []);
 
-  const title = branding?.company_name?.trim() || DEFAULT_TITLE;
+  // site_name is what this console calls itself; company_name is who owns
+  // the deployment. Falling through in that order keeps an existing
+  // company-name-only configuration rendering exactly as it did before
+  // site_name existed.
+  const title = branding?.site_name?.trim() || branding?.company_name?.trim() || DEFAULT_TITLE;
+  // Only worth showing as a second line when it is not already the title.
+  const subtitle =
+    branding?.site_name?.trim() && branding?.company_name?.trim() ? branding.company_name.trim() : null;
+
+  // The tab title was hardcoded in index.html and never updated, so a branded
+  // deployment still read "EBSMCP Admin" in the browser tab and in bookmarks.
+  useEffect(() => {
+    document.title = title;
+  }, [title]);
 
   return (
     <div className="app-shell">
       <header className="app-header">
         <div className="app-brand">
           {branding?.logo_data_uri && <img className="app-logo" src={branding.logo_data_uri} alt="" />}
-          <h1>{title}</h1>
+          <div className="app-brand-text">
+            <h1>{title}</h1>
+            {subtitle && <span className="app-brand-org">{subtitle}</span>}
+          </div>
         </div>
         <AdminSubjectBar />
       </header>

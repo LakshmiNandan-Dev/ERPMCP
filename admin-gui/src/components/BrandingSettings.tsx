@@ -17,6 +17,7 @@ function formatDate(value: string | null): string {
 export function BrandingSettings() {
   const { subject: adminSubject } = useAdminIdentity();
   const [current, setCurrent] = useState<Branding | null>(null);
+  const [siteName, setSiteName] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [logo, setLogo] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -31,6 +32,7 @@ export function BrandingSettings() {
     try {
       const branding = await getBranding();
       setCurrent(branding);
+      setSiteName(branding.site_name ?? "");
       setCompanyName(branding.company_name ?? "");
       setLogo(branding.logo_data_uri);
     } catch (err) {
@@ -89,6 +91,7 @@ export function BrandingSettings() {
     setSaving(true);
     try {
       const result = await putBranding({
+        site_name: siteName.trim() || null,
         company_name: companyName.trim() || null,
         logo_data_uri: logo,
       });
@@ -129,14 +132,33 @@ export function BrandingSettings() {
 
           <div className="form-row">
             <label>
-              Company name
+              Site name
               <input
                 type="text"
                 maxLength={120}
                 placeholder="EBSMCP Admin"
+                value={siteName}
+                onChange={(e) => setSiteName(e.target.value)}
+              />
+              <small className="muted">
+                What this console is called — shown as the header title and the browser tab.
+              </small>
+            </label>
+          </div>
+
+          <div className="form-row">
+            <label>
+              Company name
+              <input
+                type="text"
+                maxLength={120}
+                placeholder="Your organisation"
                 value={companyName}
                 onChange={(e) => setCompanyName(e.target.value)}
               />
+              <small className="muted">
+                The organisation that owns this deployment. Used as the title when no site name is set.
+              </small>
             </label>
           </div>
 

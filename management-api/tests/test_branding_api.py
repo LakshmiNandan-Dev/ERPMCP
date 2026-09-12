@@ -54,6 +54,7 @@ def test_unconfigured_returns_nulls_rather_than_404():
     _cleanup()
     body = client.get("/branding").json()
     assert body == {
+        "site_name": None,
         "company_name": None,
         "logo_data_uri": None,
         "updated_at": None,
@@ -139,3 +140,64 @@ def test_a_valid_inline_image_is_accepted():
         assert resp.json()["logo_data_uri"].startswith("data:image/svg+xml;base64,")
     finally:
         _cleanup()
+
+
+# ── site name vs company name ────────────────────────────────────────────────
+
+def test_site_name_and_company_name_are_stored_independently():
+    """Two distinct fields: what the console is called, and who owns it."""
+    _cleanup()
+    try:
+        resp = client.put(
+            "/branding",
+            headers=ADMIN,
+            json={"site_name": "EBS Operations Portal", "company_name": "Acme Corp",
+                  "logo_data_uri": None},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["site_name"] == "EBS Operations Portal"
+        assert body["company_name"] == "Acme Corp"
+    finally:
+        _cleanup()
+
+
+def test_company_name_alone_still_works_unchanged():
+    """Backward compatibility: a deployment configured before site_name
+    existed set only a company name, and the header falls through to it. That
+    must keep working rather than silently reverting to the product default."""
+    _cleanup()
+    try:
+        resp = client.put(
+            "/branding",
+            headers=ADMIN,
+            json={"site_name": None, "company_name": "Acme Corp", "logo_data_uri": None},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["site_name"] is None
+        assert resp.json()["company_name"] == "Acme Corp"
+    finally:
+        _cleanup()
+
+
+def test_blank_site_name_is_normalised_to_null():
+    """Blank must fall through to company_name, not render an empty title."""
+    _cleanup()
+    try:
+        resp = client.put(
+            "/branding",
+            headers=ADMIN,
+            json={"site_name": "   ", "company_name": "Acme Corp", "logo_data_uri": None},
+        )
+        assert resp.json()["site_name"] is None
+    finally:
+        _cleanup()
+
+
+def test_site_name_is_length_capped():
+    resp = client.put(
+        "/branding",
+        headers=ADMIN,
+        json={"site_name": "x" * 121, "company_name": None, "logo_data_uri": None},
+    )
+    assert resp.status_code == 422

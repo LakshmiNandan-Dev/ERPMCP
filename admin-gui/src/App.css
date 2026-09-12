@@ -49,6 +49,17 @@ body {
   gap: 0.7rem;
 }
 
+.app-brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.app-brand-org {
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+
 /* Height-constrained, width auto: a customer logo can be any aspect ratio and
    must not be able to distort the header or push the sign-in bar off-screen. */
 .app-logo {

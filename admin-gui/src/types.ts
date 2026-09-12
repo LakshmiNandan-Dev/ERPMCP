@@ -117,6 +117,7 @@ export interface AuditLogEntry {
 // an unconfigured deployment is a normal state, and the header falls back to
 // the product default rather than treating it as an error.
 export interface Branding {
+  site_name: string | null;
   company_name: string | null;
   logo_data_uri: string | null;
   updated_at: string | null;
@@ -124,6 +125,7 @@ export interface Branding {
 }
 
 export interface BrandingInput {
+  site_name: string | null;
   company_name: string | null;
   logo_data_uri: string | null;
 }

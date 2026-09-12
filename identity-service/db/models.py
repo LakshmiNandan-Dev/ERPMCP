@@ -339,6 +339,12 @@ branding = Table(
     "branding",
     metadata,
     Column("id", Integer, primary_key=True),
+    # Two distinct names, not one: site_name is what this console calls
+    # itself (the white-label replacement for "EBSMCP Admin"), company_name
+    # is the organisation that owns the deployment. A customer may want one,
+    # the other, or both — "Acme Corp" alone reads as the title, while
+    # "EBS Operations Portal" under an Acme logo reads as the product.
+    Column("site_name", String(120), nullable=True),
     Column("company_name", String(120), nullable=True),
     Column("logo_data_uri", Text, nullable=True),
     Column("updated_at", TZDateTime, nullable=True, onupdate=func.now()),

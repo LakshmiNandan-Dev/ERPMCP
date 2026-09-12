@@ -16,12 +16,16 @@ _ALLOWED_PREFIXES = ("data:image/png;base64,", "data:image/jpeg;base64,",
 
 
 class BrandingInput(BaseModel):
+    # What the console calls itself, replacing the hardcoded product name.
+    site_name: str | None = Field(default=None, max_length=120)
     company_name: str | None = Field(default=None, max_length=120)
     logo_data_uri: str | None = Field(default=None, max_length=MAX_LOGO_CHARS)
 
-    @field_validator("company_name")
+    @field_validator("site_name", "company_name")
     @classmethod
     def _blank_to_none(cls, v: str | None) -> str | None:
+        """Blank becomes null so the header falls through to the next name in
+        the chain, rather than rendering an empty title bar."""
         return (v or "").strip() or None
 
     @field_validator("logo_data_uri")
@@ -52,6 +56,7 @@ class BrandingOut(BaseModel):
     be an ordinary response carrying nulls, not a 404 the header must special-case.
     """
 
+    site_name: str | None
     company_name: str | None
     logo_data_uri: str | None
     updated_at: datetime | None
