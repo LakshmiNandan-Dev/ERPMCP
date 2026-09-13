@@ -55,6 +55,19 @@ class Settings(BaseSettings):
     # automatically, no other code changes.
     admin_session_secret: str | None = Field(default=None, alias="ADMIN_SESSION_SECRET")
 
+    # Which deploy stage this deployment serves — the same value mcp-server
+    # reads, and the one identity mappings are matched against at resolution
+    # time. This API had no notion of it, so the admin console offered all
+    # four environments unconditionally: a mapping created for a stage this
+    # deployment does not serve is stored and shown as active, then fails at
+    # tool-call time as no_identity_mapping rather than at creation.
+    #
+    # Optional with a default rather than required, deliberately: making it
+    # mandatory would stop every existing deployment that has not yet added
+    # it to management-api's environment from starting at all, turning a
+    # diagnostic improvement into an outage. "dev" matches .env.example.
+    ebsmcp_environment: str = Field(default="dev", alias="EBSMCP_ENVIRONMENT")
+
     @property
     def has_real_ebs_connection(self) -> bool:
         return bool(self.ebs_db_dsn and self.ebs_db_user and self.ebs_db_password)

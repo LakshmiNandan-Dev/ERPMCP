@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.config import load_settings
 from app.routers import audit_log, auth, branding, ebs_lookup, entra_config, identity_mappings
 
 app = FastAPI(title="EBSMCP Management API")
@@ -29,3 +30,19 @@ app.include_router(branding.router)
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/deployment")
+def deployment() -> dict[str, str]:
+    """What this deployment is, for the admin console to read.
+
+    Deliberately separate from /health rather than folded into it: health is
+    scraped by probes and orchestrators, and changing its shape to carry
+    configuration risks breaking whatever is already watching it.
+
+    Ungated, like GET /branding — the console needs this before sign-in to
+    know which environment it is administering, and a deploy-stage name is
+    not sensitive. It is which stage this process serves, NOT which EBS
+    database it reaches; see the README on those being different axes.
+    """
+    return {"environment": load_settings().ebsmcp_environment}

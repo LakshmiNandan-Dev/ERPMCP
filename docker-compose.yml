@@ -71,6 +71,13 @@ services:
       # secret configured 503s forever. Onboarding lookups against a real EBS
       # (GET /ebs-lookup/...) use the same EBS_DB_* vars as mcp-server.
       ADMIN_SESSION_SECRET: ${ADMIN_SESSION_SECRET:-}
+      # Which deploy stage this deployment serves. mcp-server has always had
+      # this; management-api did not, so it could not tell the admin console
+      # which environment is actually live — and the console offered all four
+      # unconditionally. A mapping created for a stage this deployment does
+      # not serve is accepted and displayed as active, then never resolves.
+      # Must match mcp-server's value above.
+      EBSMCP_ENVIRONMENT: ${EBSMCP_ENVIRONMENT:-dev}
       EBS_DB_DSN: ${EBS_DB_DSN:-}
       EBS_DB_USER: ${EBS_DB_USER:-}
       EBS_DB_PASSWORD: ${EBS_DB_PASSWORD:-}
