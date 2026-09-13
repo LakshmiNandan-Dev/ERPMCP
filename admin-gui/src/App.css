@@ -537,3 +537,24 @@ tbody tr:last-child td {
 .detail-error {
   color: var(--danger);
 }
+
+/* An off-stage mapping is not an error — it saves and is valid — but it will
+   never resolve on this deployment, so it has to read as a caution rather
+   than as ordinary metadata. */
+.pill-warn {
+  background: #fdf0d5;
+  border-color: #d9a441;
+  color: #7a5210;
+  margin-left: 0.35rem;
+}
+
+.form-warning {
+  color: #7a5210;
+  background: #fdf0d5;
+  border: 1px solid #d9a441;
+  border-radius: 4px;
+  padding: 0.4rem 0.55rem;
+  display: block;
+  margin-top: 0.3rem;
+  line-height: 1.35;
+}

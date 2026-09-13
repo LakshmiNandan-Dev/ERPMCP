@@ -18,6 +18,10 @@ import type {
 
 interface Props {
   onCreated: (mapping: IdentityMapping) => void;
+  // The deploy stage this deployment actually serves, from GET /deployment.
+  // null while it is still loading, or if the call failed — in which case no
+  // warning is shown rather than a wrong one.
+  liveEnvironment: string | null;
 }
 
 const emptyScope = (): OrgScopeInput => ({ org_id: "", org_name: "", resolved_from_source: false });
@@ -26,7 +30,7 @@ function responsibilityKey(r: AssignedResponsibility): string {
   return `${r.application_id}:${r.responsibility_id}`;
 }
 
-export function NewMappingForm({ onCreated }: Props) {
+export function NewMappingForm({ onCreated, liveEnvironment }: Props) {
   const { subject: adminSubject } = useAdminIdentity();
   const [entraSubject, setEntraSubject] = useState("");
   const [environment, setEnvironment] = useState<Environment>("dev");
@@ -139,6 +143,12 @@ export function NewMappingForm({ onCreated }: Props) {
 
   const selectedResponsibility = responsibilities.find((r) => responsibilityKey(r) === selectedRespKey);
 
+  // mcp-server resolves mappings for its own stage only. A mapping created
+  // for any other stage saves, lists, and reads as active — then never
+  // matches, surfacing to the user as no_identity_mapping while the admin is
+  // looking at what appears to be a working grant.
+  const offStage = liveEnvironment !== null && environment !== liveEnvironment;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -233,6 +243,17 @@ export function NewMappingForm({ onCreated }: Props) {
             <option value="uat">uat</option>
             <option value="prod">prod</option>
           </select>
+          {liveEnvironment && !offStage && (
+            <small className="muted">This deployment serves {liveEnvironment}.</small>
+          )}
+          {offStage && (
+            <small className="form-warning">
+              This deployment serves <strong>{liveEnvironment}</strong>. A mapping created for{" "}
+              <strong>{environment}</strong> will be saved and listed as active, but will never resolve —
+              the user will be denied with &ldquo;no identity mapping&rdquo;. Create it only if you are
+              pre-staging for a future promotion.
+            </small>
+          )}
         </label>
         <label>
           Target system

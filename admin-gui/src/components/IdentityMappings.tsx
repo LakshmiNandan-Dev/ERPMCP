@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ApiError, closeIdentityMapping, listIdentityMappings } from "../api/client";
+import { ApiError, closeIdentityMapping, getDeployment, listIdentityMappings } from "../api/client";
 import { useAdminIdentity } from "../auth/AdminIdentity";
 import type { IdentityMapping } from "../types";
 import { NewMappingForm } from "./NewMappingForm";
@@ -16,6 +16,17 @@ export function IdentityMappings() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [closingId, setClosingId] = useState<number | null>(null);
+  // Fetched once here and passed down, rather than letting the form fetch it
+  // too — two components racing the same call could disagree mid-render.
+  // Unauthenticated, so it does not wait on adminSubject. A failure leaves it
+  // null and simply suppresses the warnings, never blocks the page.
+  const [liveEnvironment, setLiveEnvironment] = useState<string | null>(null);
+
+  useEffect(() => {
+    getDeployment()
+      .then((d) => setLiveEnvironment(d.environment))
+      .catch(() => setLiveEnvironment(null));
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -56,7 +67,7 @@ export function IdentityMappings() {
 
   return (
     <div className="page">
-      <NewMappingForm onCreated={load} />
+      <NewMappingForm onCreated={load} liveEnvironment={liveEnvironment} />
 
       <div className="section-header">
         <h2>Identity mappings</h2>
@@ -96,6 +107,14 @@ export function IdentityMappings() {
                     <td>{m.entra_subject}</td>
                     <td>
                       <span className="pill">{m.environment}</span>
+                      {liveEnvironment && m.environment !== liveEnvironment && (
+                        <span
+                          className="pill pill-warn"
+                          title={`This deployment resolves mappings for '${liveEnvironment}' only — this one will never match, and the user will be denied with "no identity mapping".`}
+                        >
+                          inactive stage
+                        </span>
+                      )}
                     </td>
                     <td>{m.target_system === "ebs_dba" ? "EBS — DBA" : m.target_system.toUpperCase()}</td>
                     <td>

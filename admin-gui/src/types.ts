@@ -129,3 +129,11 @@ export interface BrandingInput {
   company_name: string | null;
   logo_data_uri: string | null;
 }
+
+// Mirrors management-api's GET /deployment. Which deploy stage this
+// deployment serves — NOT which EBS database it reaches; see the README on
+// those being different axes. Identity mappings only resolve when their
+// environment matches this.
+export interface DeploymentInfo {
+  environment: string;
+}

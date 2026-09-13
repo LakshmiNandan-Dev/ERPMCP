@@ -2,6 +2,7 @@ import type {
   AssignedOrganization,
   Branding,
   BrandingInput,
+  DeploymentInfo,
   AssignedResponsibility,
   AuditLogEntry,
   Environment,
@@ -169,4 +170,10 @@ export function getBranding(): Promise<Branding> {
 
 export function putBranding(body: BrandingInput): Promise<Branding> {
   return request("/branding", { method: "PUT", body: JSON.stringify(body) });
+}
+
+// Unauthenticated, like getBranding: the console needs to know which
+// environment it is administering regardless of sign-in state.
+export function getDeployment(): Promise<DeploymentInfo> {
+  return request("/deployment");
 }
