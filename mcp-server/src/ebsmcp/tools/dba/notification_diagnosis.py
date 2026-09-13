@@ -31,13 +31,13 @@ from ebsmcp.tools.registry import ToolContext, ToolSet, resolve_scoped_call
 
 _ACTIVITY_LOOKUP_SQL = (
     "SELECT wias.item_type, wias.item_key, wias.activity_status, wias.assigned_user "
-    "FROM APPLSYS.WF_ITEM_ACTIVITY_STATUSES wias "
+    "FROM APPS.WF_ITEM_ACTIVITY_STATUSES wias "
     "WHERE wias.notification_id = :notification_id"
 )
 
 _MAILER_STATUS_SQL = (
     "SELECT fsc.component_id, fsc.component_name, fsc.component_status, fsc.last_update_date "
-    "FROM APPLSYS.FND_SVC_COMPONENTS fsc "
+    "FROM APPS.FND_SVC_COMPONENTS fsc "
     "WHERE UPPER(fsc.component_name) LIKE '%MAILER%' "
     "ORDER BY fsc.component_name"
 )

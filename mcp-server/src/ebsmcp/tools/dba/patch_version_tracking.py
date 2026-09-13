@@ -3,7 +3,7 @@ genuinely solid ground (DBA_EDITIONS is a core Oracle 11.2+ Edition-Based
 Redefinition dictionary view, not EBS-specific at all). patch_history
 extends the original recent_applied_patches tool.
 
-adop_session_status (APPLSYS.AD_ADOP_SESSIONS) was added later, once a
+adop_session_status (APPS.AD_ADOP_SESSIONS) was added later, once a
 live instance was available to verify its column structure and STATUS
 code semantics directly rather than guessing — see the tool's own
 docstring. This covers session-level status/phase tracking only.
@@ -19,8 +19,8 @@ verified against a live instance (2026-09-02).
 
 applied_patches (patch_history) was written from memory against an AD.
 qualifier and the doubt flagged here was justified: verified live
-(2026-09-10) there is no AD schema on this instance, so AD.AD_APPLIED_PATCHES
-and AD.AD_BUGS both raise ORA-00942 and the view could never return a row.
+(2026-09-10) there is no AD schema on this instance, so APPS.AD_APPLIED_PATCHES
+and APPS.AD_BUGS both raise ORA-00942 and the view could never return a row.
 AD_APPLIED_PATCHES also has neither BUG_ID nor STATUS, so the join to
 AD_BUGS could not have worked either. Both now read through APPS, which is
 the access path Oracle documents for application code.
@@ -208,10 +208,12 @@ _ADOP_PHASE_COLUMNS = (
 
 
 def build_adop_session_query(session_id: int | None) -> tuple[str, dict[str, Any]]:
-    """Columns verified against a live instance (2026-09-02): the table
-    is APPLSYS.AD_ADOP_SESSIONS, not AD.AD_ADOP_SESSIONS — this instance
-    has no AD schema at all (0 tables owned by AD in ALL_TABLES); a
-    synonym check confirmed the real owner is APPLSYS. SESSION_INPUT_DATA
+    """Columns verified against a live instance (2026-09-02): the real
+    OWNER is APPLSYS, not AD — this instance has no AD schema at all (0
+    tables owned by AD in ALL_TABLES), confirmed by a synonym check. It is
+    READ through APPS like every other product object (see
+    connectors/base.py), which resolves to the same table: APPS and APPLSYS
+    returned identical row counts (28 each) when measured on 2026-09-11. SESSION_INPUT_DATA
     (a CLOB of session XML) is deliberately excluded — internal/verbose,
     not diagnostic.
 
@@ -233,7 +235,7 @@ def build_adop_session_query(session_id: int | None) -> tuple[str, dict[str, Any
         "appltop_id, prepare_start_date, prepare_end_date, apply_start_date, apply_end_date, "
         "finalize_start_date, finalize_end_date, cutover_start_date, cutover_end_date, "
         "cleanup_start_date, cleanup_end_date, abort_start_date, abort_end_date "
-        "FROM APPLSYS.AD_ADOP_SESSIONS "
+        "FROM APPS.AD_ADOP_SESSIONS "
         f"{where}"
         "ORDER BY adop_session_id DESC "
         f"{limit}"

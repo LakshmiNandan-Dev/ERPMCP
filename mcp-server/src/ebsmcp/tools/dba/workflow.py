@@ -6,8 +6,9 @@ free-text filters always bound rather than string-interpolated.
 Schema ownership caveat carried over from the original single-purpose
 version: WF_ITEM_ACTIVITY_STATUSES and its columns are standard Oracle
 Workflow structures, but Workflow's schema owner has varied historically
-(older releases used OWF_MGR; R12 typically bundles it under APPLSYS) —
-confirm APPLSYS is correct against the target release before relying on
+(older releases used OWF_MGR; R12 bundles it under APPLSYS, read through
+APPS like every other product schema) — confirm that against the target
+release before relying on
 this in production.
 """
 
@@ -56,7 +57,7 @@ def build_query(
     sql = (
         "SELECT wias.item_type, wias.item_key, wias.activity_status, "
         "wias.assigned_user, wias.begin_date "
-        "FROM APPLSYS.WF_ITEM_ACTIVITY_STATUSES wias "
+        "FROM APPS.WF_ITEM_ACTIVITY_STATUSES wias "
         f"WHERE {' AND '.join(where)} "
         "ORDER BY wias.begin_date DESC"
     )
@@ -76,7 +77,7 @@ def build_notifications_query(
         return (
             "SELECT wn.notification_id, wn.message_type, wn.message_name, wn.subject, "
             "wn.status, wn.mail_status, wn.recipient_role, wn.begin_date, wn.end_date, wn.responder "
-            "FROM APPLSYS.WF_NOTIFICATIONS wn "
+            "FROM APPS.WF_NOTIFICATIONS wn "
             "WHERE wn.notification_id = :notification_id",
             {"notification_id": notification_id},
         )
@@ -89,7 +90,7 @@ def build_notifications_query(
 
     sql = (
         "SELECT wn.mail_status, COUNT(*) AS notification_count "
-        "FROM APPLSYS.WF_NOTIFICATIONS wn "
+        "FROM APPS.WF_NOTIFICATIONS wn "
         f"{where}"
         "GROUP BY wn.mail_status "
         "ORDER BY notification_count DESC"
@@ -151,7 +152,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
         ) as (identity, _effective_org_ids, connector):
             rows = connector.run(
                 "SELECT wias.activity_status, COUNT(*) AS activity_count "
-                "FROM APPLSYS.WF_ITEM_ACTIVITY_STATUSES wias "
+                "FROM APPS.WF_ITEM_ACTIVITY_STATUSES wias "
                 "WHERE wias.activity_status IN ('DEFERRED', 'ACTIVE', 'WAITING') "
                 "GROUP BY wias.activity_status "
                 "ORDER BY activity_count DESC"
@@ -179,7 +180,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
         ) as (identity, _effective_org_ids, connector):
             rows = connector.run(
                 "SELECT fsc.component_id, fsc.component_name, fsc.component_status, fsc.last_update_date "
-                "FROM APPLSYS.FND_SVC_COMPONENTS fsc "
+                "FROM APPS.FND_SVC_COMPONENTS fsc "
                 "WHERE UPPER(fsc.component_name) LIKE '%MAILER%' "
                 "ORDER BY fsc.component_name"
             )

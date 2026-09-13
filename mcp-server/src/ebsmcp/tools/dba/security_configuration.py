@@ -149,8 +149,8 @@ LoginSessionsView = Literal["active", "closed"]
 _LOGIN_SESSIONS_QUERIES: dict[LoginSessionsView, str] = {
     "active": (
         "SELECT fu.user_name, fl.start_time, fl.pid, COUNT(*) OVER () AS total_count "
-        "FROM APPLSYS.FND_LOGINS fl "
-        "JOIN APPLSYS.FND_USER fu ON fu.user_id = fl.user_id "
+        "FROM APPS.FND_LOGINS fl "
+        "JOIN APPS.FND_USER fu ON fu.user_id = fl.user_id "
         "WHERE fl.end_time IS NULL "
         "ORDER BY fl.start_time DESC "
         "FETCH FIRST 50 ROWS ONLY"
@@ -158,8 +158,8 @@ _LOGIN_SESSIONS_QUERIES: dict[LoginSessionsView, str] = {
     "closed": (
         "SELECT fu.user_name, fl.start_time, fl.end_time, fl.pid, "
         "COUNT(*) OVER () AS total_count "
-        "FROM APPLSYS.FND_LOGINS fl "
-        "JOIN APPLSYS.FND_USER fu ON fu.user_id = fl.user_id "
+        "FROM APPS.FND_LOGINS fl "
+        "JOIN APPS.FND_USER fu ON fu.user_id = fl.user_id "
         "WHERE fl.end_time IS NOT NULL "
         "ORDER BY fl.end_time DESC "
         "FETCH FIRST 50 ROWS ONLY"
@@ -178,12 +178,12 @@ NamedUserStatus = Literal["active", "inactive"]
 _NAMED_USER_COUNT_QUERIES: dict[NamedUserStatus, str] = {
     "active": (
         "SELECT COUNT(DISTINCT fu.user_id) AS named_user_count "
-        "FROM APPLSYS.FND_USER fu "
+        "FROM APPS.FND_USER fu "
         "WHERE fu.end_date IS NULL OR fu.end_date > SYSDATE"
     ),
     "inactive": (
         "SELECT COUNT(DISTINCT fu.user_id) AS named_user_count "
-        "FROM APPLSYS.FND_USER fu "
+        "FROM APPS.FND_USER fu "
         "WHERE fu.end_date IS NOT NULL AND fu.end_date <= SYSDATE"
     ),
 }
@@ -218,7 +218,7 @@ def build_failed_login_query(username: str | None) -> tuple[str, dict[str, Any]]
         binds["username"] = username.upper()
     sql = (
         "SELECT login_name, COUNT(*) AS failed_attempts, MAX(attempt_time) AS last_attempt "
-        "FROM APPLSYS.FND_UNSUCCESSFUL_LOGINS "
+        "FROM APPS.FND_UNSUCCESSFUL_LOGINS "
         f"WHERE {' AND '.join(where)} "
         "GROUP BY login_name "
         "ORDER BY failed_attempts DESC"
@@ -248,11 +248,11 @@ def build_responsibility_assignments_query(
     sql = (
         "SELECT fu.user_name, fr.responsibility_id, fr.application_id, frt.responsibility_name, "
         "urg.start_date, urg.end_date, COUNT(*) OVER () AS total_count "
-        "FROM APPLSYS.FND_USER fu "
-        "JOIN APPLSYS.FND_USER_RESP_GROUPS urg ON urg.user_id = fu.user_id "
-        "JOIN APPLSYS.FND_RESPONSIBILITY fr "
+        "FROM APPS.FND_USER fu "
+        "JOIN APPS.FND_USER_RESP_GROUPS urg ON urg.user_id = fu.user_id "
+        "JOIN APPS.FND_RESPONSIBILITY fr "
         "  ON fr.responsibility_id = urg.responsibility_id AND fr.application_id = urg.responsibility_application_id "
-        "JOIN APPLSYS.FND_RESPONSIBILITY_TL frt "
+        "JOIN APPS.FND_RESPONSIBILITY_TL frt "
         "  ON frt.responsibility_id = fr.responsibility_id AND frt.application_id = fr.application_id "
         " AND frt.language = 'US' "
         f"{where_clause}"
@@ -276,8 +276,8 @@ def build_profile_values_query(
 
     sql = (
         "SELECT fpov.level_id, fpov.level_value, fpov.profile_option_value "
-        "FROM APPLSYS.FND_PROFILE_OPTION_VALUES fpov "
-        "JOIN APPLSYS.FND_PROFILE_OPTIONS fpo ON fpo.profile_option_id = fpov.profile_option_id "
+        "FROM APPS.FND_PROFILE_OPTION_VALUES fpov "
+        "JOIN APPS.FND_PROFILE_OPTIONS fpo ON fpo.profile_option_id = fpov.profile_option_id "
         f"WHERE {' AND '.join(where)} "
         "ORDER BY fpov.level_id, fpov.level_value"
     )
@@ -329,7 +329,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
         ) as (identity, _effective_org_ids, connector):
             rows = connector.run(
                 "SELECT user_name, start_date, end_date, password_date, email_address, description "
-                "FROM APPLSYS.FND_USER "
+                "FROM APPS.FND_USER "
                 "WHERE user_name = :username",
                 {"username": username.upper()},
             )
@@ -429,7 +429,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             # — dropped, not replaced, since there's no equivalent column.
             rows = connector.run(
                 "SELECT responsibility_id, application_id, action_id, rule_type "
-                "FROM APPLSYS.FND_RESP_FUNCTIONS "
+                "FROM APPS.FND_RESP_FUNCTIONS "
                 "WHERE responsibility_id = :responsibility_id "
                 "ORDER BY action_id",
                 {"responsibility_id": responsibility_id},
@@ -557,16 +557,16 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
         ) as (identity, _effective_org_ids, connector):
             rows = connector.run(
                 "SELECT DISTINCT fu.user_name "
-                "FROM APPLSYS.FND_USER fu "
+                "FROM APPS.FND_USER fu "
                 "WHERE EXISTS ( "
-                "  SELECT 1 FROM APPLSYS.FND_USER_RESP_GROUPS urg1 "
-                "  JOIN APPLSYS.FND_RESPONSIBILITY_TL frt1 "
+                "  SELECT 1 FROM APPS.FND_USER_RESP_GROUPS urg1 "
+                "  JOIN APPS.FND_RESPONSIBILITY_TL frt1 "
                 "    ON frt1.responsibility_id = urg1.responsibility_id AND frt1.language = 'US' "
                 "  WHERE urg1.user_id = fu.user_id AND frt1.responsibility_name = :responsibility_a "
                 "    AND (urg1.end_date IS NULL OR urg1.end_date > SYSDATE) "
                 ") AND EXISTS ( "
-                "  SELECT 1 FROM APPLSYS.FND_USER_RESP_GROUPS urg2 "
-                "  JOIN APPLSYS.FND_RESPONSIBILITY_TL frt2 "
+                "  SELECT 1 FROM APPS.FND_USER_RESP_GROUPS urg2 "
+                "  JOIN APPS.FND_RESPONSIBILITY_TL frt2 "
                 "    ON frt2.responsibility_id = urg2.responsibility_id AND frt2.language = 'US' "
                 "  WHERE urg2.user_id = fu.user_id AND frt2.responsibility_name = :responsibility_b "
                 "    AND (urg2.end_date IS NULL OR urg2.end_date > SYSDATE) "

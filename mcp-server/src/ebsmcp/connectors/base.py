@@ -1,7 +1,7 @@
 """EBS connector interface, plus the two standing SQL conventions agreed on
 for every tool that queries EBS: GV$ instead of V$ (portable across
 single-instance and RAC without conditional logic), and every real
-product-schema object (APPLSYS., AD., etc.) fully schema-qualified (no
+product-schema object qualified as APPS.OBJECT (no
 dependency on the calling account's CURRENT_SCHEMA — onboarding a new
 client's read-only account reduces to "grant SELECT on this exact list of
 fully-qualified objects").
@@ -76,7 +76,7 @@ def validate_sql_conventions(sql: str) -> None:
         if "." not in target:
             violations.append(
                 f"unqualified object {target!r} — every FROM/JOIN target must be "
-                "SCHEMA.OBJECT, e.g. APPLSYS.FND_CONCURRENT_REQUESTS (GV$*/DBA_* "
+                "SCHEMA.OBJECT, e.g. APPS.FND_CONCURRENT_REQUESTS (GV$*/DBA_* "
                 "catalog views are exempt — see module docstring)."
             )
 

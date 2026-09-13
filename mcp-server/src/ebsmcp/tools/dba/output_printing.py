@@ -36,7 +36,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             # keyed by printer_type), a deeper join not chased here.
             rows = connector.run(
                 "SELECT fp.printer_name, fp.printer_type "
-                "FROM APPLSYS.FND_PRINTER fp "
+                "FROM APPS.FND_PRINTER fp "
                 "ORDER BY fp.printer_name"
             )
             return {
@@ -70,8 +70,8 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             rows = connector.run(
                 "SELECT fcq.concurrent_queue_id, fcqt.user_concurrent_queue_name AS manager_name, "
                 "fcq.running_processes, fcq.max_processes, fcq.enabled_flag, fcq.control_code "
-                "FROM APPLSYS.FND_CONCURRENT_QUEUES fcq "
-                "JOIN APPLSYS.FND_CONCURRENT_QUEUES_TL fcqt "
+                "FROM APPS.FND_CONCURRENT_QUEUES fcq "
+                "JOIN APPS.FND_CONCURRENT_QUEUES_TL fcqt "
                 "  ON fcqt.application_id = fcq.application_id "
                 " AND fcqt.concurrent_queue_id = fcq.concurrent_queue_id "
                 " AND fcqt.language = 'US' "
@@ -106,8 +106,8 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
                 "SELECT fcr.request_id, "
                 "fcpt.user_concurrent_program_name AS program_name, "
                 "fcr.status_code, fcr.actual_completion_date "
-                "FROM APPLSYS.FND_CONCURRENT_REQUESTS fcr "
-                "JOIN APPLSYS.FND_CONCURRENT_PROGRAMS_TL fcpt "
+                "FROM APPS.FND_CONCURRENT_REQUESTS fcr "
+                "JOIN APPS.FND_CONCURRENT_PROGRAMS_TL fcpt "
                 "  ON fcpt.application_id = fcr.program_application_id "
                 " AND fcpt.concurrent_program_id = fcr.concurrent_program_id "
                 " AND fcpt.language = 'US' "

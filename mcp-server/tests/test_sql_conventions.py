@@ -9,7 +9,7 @@ def test_fully_qualified_gv_dollar_passes():
 
 def test_fully_qualified_application_schema_passes():
     validate_sql_conventions(
-        "SELECT request_id FROM APPLSYS.FND_CONCURRENT_REQUESTS WHERE org_id = :org_id"
+        "SELECT request_id FROM APPS.FND_CONCURRENT_REQUESTS WHERE org_id = :org_id"
     )
 
 
@@ -20,7 +20,7 @@ def test_dual_is_exempt_from_qualification():
 def test_join_targets_are_also_checked():
     with pytest.raises(UnqualifiedSQLError):
         validate_sql_conventions(
-            "SELECT a.request_id FROM APPLSYS.FND_CONCURRENT_REQUESTS a "
+            "SELECT a.request_id FROM APPS.FND_CONCURRENT_REQUESTS a "
             "JOIN FND_CONCURRENT_PROCESSES b ON a.controlling_manager = b.concurrent_process_id"
         )
 

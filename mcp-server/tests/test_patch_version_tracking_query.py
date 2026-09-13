@@ -86,7 +86,9 @@ def test_adop_session_query_without_id_fetches_recent_five():
     assert "WHERE" not in sql
     assert "FETCH FIRST 5 ROWS ONLY" in sql
     assert binds == {}
-    assert "APPLSYS.AD_ADOP_SESSIONS" in sql
+    # Owner is APPLSYS (verified by synonym check); read through APPS like
+    # every other product object — see connectors/base.py.
+    assert "APPS.AD_ADOP_SESSIONS" in sql
     validate_sql_conventions(sql)
 
 
