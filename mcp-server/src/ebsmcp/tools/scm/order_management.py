@@ -21,7 +21,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
 from ebsmcp.tools.registry import ToolContext, ToolSet, resolve_scoped_call, split_total_count
-from ebsmcp.tools.scm._scope import ROW_CAP, escape_like, org_in_clause, scoped_envelope
+from ebsmcp.tools.scoping import ROW_CAP, escape_like, org_in_clause, scoped_envelope
 
 _CUSTOMER_JOINS = (
     "LEFT JOIN APPS.HZ_CUST_ACCOUNTS hca ON hca.cust_account_id = ooh.sold_to_org_id "

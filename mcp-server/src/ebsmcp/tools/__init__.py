@@ -22,6 +22,15 @@ from .registry import (
     resolve_identity_only,
     resolve_scoped_call,
 )
+from .manufacturing import (
+    COSTING_TOOLSET,
+    DIAGNOSE_JOB_TOOLSET,
+    EAM_TOOLSET,
+    ENGINEERING_TOOLSET,
+    PERIOD_CLOSE_TOOLSET,
+    QUALITY_TOOLSET,
+    WIP_TOOLSET,
+)
 from .scm import (
     INVENTORY_TOOLSET,
     ORDER_MANAGEMENT_TOOLSET,
@@ -31,6 +40,13 @@ from .scm import (
 )
 
 __all__ = [
+    "COSTING_TOOLSET",
+    "DIAGNOSE_JOB_TOOLSET",
+    "EAM_TOOLSET",
+    "ENGINEERING_TOOLSET",
+    "PERIOD_CLOSE_TOOLSET",
+    "QUALITY_TOOLSET",
+    "WIP_TOOLSET",
     "CONCURRENT_PROCESSING_TOOLSET",
     "DIAGNOSE_REQUEST_TOOLSET",
     "HEALTH_TOOLSET",

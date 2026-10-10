@@ -24,7 +24,7 @@ from ebsmcp.tools import (
     SHIPPING_TOOLSET,
 )
 from ebsmcp.tools import ToolContext, mount_toolsets
-from ebsmcp.tools.scm._scope import escape_like, org_in_clause
+from ebsmcp.tools.scoping import escape_like, org_in_clause
 from ebsmcp.tools.scm.inventory import (
     build_item_lookup_query,
     build_onhand_query,
