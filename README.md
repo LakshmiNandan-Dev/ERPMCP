@@ -35,7 +35,7 @@ administrator, not a config file, decides who can see what.
 
 | Service | Stack | Port | Role |
 |---|---|---|---|
-| [mcp-server/](mcp-server/) | Python, MCP SDK | 8080 | The MCP endpoint. 66 read-only EBS tools across 13 toolsets. |
+| [mcp-server/](mcp-server/) | Python, MCP SDK | 8080 | The MCP endpoint. 96 read-only EBS tools across 25 toolsets, plus `list_ebs_instances`. |
 | [management-api/](management-api/) | FastAPI | 8010 | Admin API — onboarding, Entra config, audit queries. |
 | [admin-gui/](admin-gui/) | React + Vite | 5174 | Admin console for the above. |
 | [identity-service/](identity-service/) | SQLAlchemy + Alembic | — | Schema/migrations for the identity-mapping store. |
@@ -90,19 +90,21 @@ what makes the rest safe:
 
 > **An LLM-constructed tool call is not a trusted source of authorization.**
 > Only the resolved identity is. This is enforced in one place —
-> [policy/entitlement.py](mcp-server/src/ebsmcp/policy/entitlement.py) — rather than trusted to 66 individual
+> [policy/entitlement.py](mcp-server/src/ebsmcp/policy/entitlement.py) — rather than trusted to 96 individual
 > tools.
 
 ---
 
 ## Tool catalog
 
-66 tools, all read-only (`read_only_hint=True`, `destructive_hint=False`),
-grouped into 13 mountable toolsets.
+96 tools, all read-only (`read_only_hint=True`, `destructive_hint=False`),
+grouped into 25 mountable toolsets, plus `list_ebs_instances`.
 
-Toolsets exist for a specific reason: 66 tools presented as one flat list is a
+Toolsets exist for a specific reason: 96 tools presented as one flat list is a
 selection-accuracy problem for the model, not a cosmetic one. A deployment
 mounts only the toolsets it needs.
+
+**DBA toolsets** — `ebs_dba` persona, all-or-nothing, not Org-scoped:
 
 | Toolset | Tools | What it covers |
 |---|---|---|
@@ -119,6 +121,35 @@ mounts only the toolsets it needs.
 | `diagnose_request` | 1 | Guided diagnosis of one concurrent request |
 | `notification_diagnosis` | 1 | Guided diagnosis of a stuck notification |
 | `health` | 1 | `server_health` — pipeline smoke test |
+
+**Functional toolsets** — `ebs` persona, every query restricted to the caller's
+permitted operating units (Org IDs). Calls may pass `org_ids` to narrow that
+further, never to widen it. Inventory-organization tables are scoped through
+`ORG_ORGANIZATION_DEFINITIONS.OPERATING_UNIT`.
+
+| Toolset | Tools | What it covers |
+|---|---|---|
+| `scm_inventory` | 3 | `onhand_quantity`, `item_lookup`, `inventory_transaction_errors` |
+| `scm_purchasing` | 4 | `purchase_order_status`, `requisitions_pending_approval`, `overdue_po_shipments`, `po_import_rejections` |
+| `scm_order_management` | 3 | `sales_order_status`, `orders_on_hold`, `order_import_errors` |
+| `scm_receiving` | 1 | `receiving_interface_errors` |
+| `scm_shipping` | 2 | `open_deliveries`, `backordered_lines` |
+| `mfg_wip` | 4 | `wip_job_status`, `wip_pending_transactions`, `job_material_shortages`, `job_progress` |
+| `mfg_engineering` | 5 | `bom_explosion`, `where_used`, `routing_detail`, `pending_ecos`, `bom_integrity_check` |
+| `mfg_quality` | 1 | `lot_genealogy` (forward/backward recall trace) |
+| `mfg_costing` | 4 | `item_cost_breakdown`, `job_variance`, `uncosted_transactions`, `wip_value_summary` |
+| `mfg_eam` | 1 | `asset_work_orders` |
+| `mfg_period_close` | 1 | `inventory_period_close_check` — blockers and a ready-to-close verdict per organization |
+| `mfg_diagnose_job` | 1 | `diagnose_job` — one call that explains why a discrete job is stuck |
+
+> **Status of the functional toolsets:** the SCM and manufacturing SQL was
+> written from the documented R12 data model and unit-tested for query
+> construction, scoping and binds, but has **not yet been run against a live
+> instance**. Each module's docstring lists the column and code-value
+> assumptions to verify first. Not yet built, because they need a live
+> instance to write reviewed SQL: `quality_results`,
+> `nonconformance_summary`, `pm_schedule_due`, `asset_failure_history`,
+> `resource_capacity_load`.
 
 Start with **`list_ebs_instances`** — it reports which instances the calling
 identity may actually reach, which is what every other tool's optional
@@ -441,8 +472,8 @@ the tool call would turn an audit-store outage into an outage of the product.
 ## Development
 
 ```bash
-cd mcp-server && pip install -e ".[dev]" && pytest      # 25 test modules
-cd management-api && pip install -e ".[dev]" && pytest  # 7 test modules
+cd mcp-server && pip install -e ".[dev]" && pytest      # 31 test modules
+cd management-api && pip install -e ".[dev]" && pytest  # 8 test modules
 cd admin-gui && npm install && npx playwright test      # e2e
 ```
 
@@ -452,14 +483,20 @@ tool cannot quietly introduce a different query style.
 
 ### Adding a toolset
 
-1. Write a module in `mcp-server/src/ebsmcp/tools/dba/` with a `_register`
-   function, and wrap each tool body in `resolve_scoped_call` — that is what
-   supplies identity, entitlement, routing, and audit.
-2. Export a `ToolSet(name=..., register=_register)`.
-3. Add it to the mount list in [server.py](mcp-server/src/ebsmcp/server.py).
+1. Write a module in the right family under `mcp-server/src/ebsmcp/tools/` —
+   `dba/` (`target_system="ebs_dba"`), or `scm/` / `manufacturing/` /
+   `finance/` / `hcm/` (`target_system="ebs"`, Org-scoped). Wrap each tool
+   body in `resolve_scoped_call` — that is what supplies identity,
+   entitlement, routing, and audit. Functional tools can use
+   `run_scoped_list` from [tools/scoping.py](mcp-server/src/ebsmcp/tools/scoping.py),
+   which also provides the Org ID bind helpers.
+2. Keep query construction in a pure `build_*` function and unit-test it
+   directly; decide summaries and verdicts in pure Python functions too.
+3. Export a `ToolSet(name=..., register=_register)`.
+4. Add it to the mount list in [server.py](mcp-server/src/ebsmcp/server.py).
 
-Placeholder packages already exist for `finance/`, `hcm/`, `scm/`, and
-`fusion/`.
+`scm/` and `manufacturing/` are populated; placeholder packages remain for
+`finance/`, `hcm/`, and `fusion/`.
 
 ### Schema changes
 
