@@ -8,7 +8,11 @@ from sqlalchemy.exc import IntegrityError
 
 from app.db import identity_engine
 from app.deps import admin_subject
-from app.models.identity import identity_mapping_org_scope, identity_mappings
+from app.models.identity import (
+    identity_mapping_org_scope,
+    identity_mapping_sensitive_grants,
+    identity_mappings,
+)
 from app.schemas.identity import Environment, IdentityMappingCreate, IdentityMappingOut, TargetSystem
 
 router = APIRouter(prefix="/identity-mappings", tags=["identity-mappings"])
@@ -27,7 +31,15 @@ def _load_with_scope(conn, mapping_id: int) -> IdentityMappingOut:
         )
     ).mappings().all()
 
-    return IdentityMappingOut.model_validate({**mapping_row, "org_scope": scope_rows})
+    grants = conn.execute(
+        select(identity_mapping_sensitive_grants.c.field_class)
+        .where(identity_mapping_sensitive_grants.c.identity_mapping_id == mapping_id)
+        .order_by(identity_mapping_sensitive_grants.c.field_class)
+    ).scalars().all()
+
+    return IdentityMappingOut.model_validate(
+        {**mapping_row, "org_scope": scope_rows, "sensitive_grants": list(grants)}
+    )
 
 
 @router.get("", response_model=list[IdentityMappingOut])
@@ -92,6 +104,8 @@ def create_identity_mapping(
                     mapped_role=body.mapped_role,
                     resolution_source=resolution_source,
                     effective_start_date=body.effective_start_date,
+                    ebs_person_id=body.ebs_person_id,
+                    hr_scope=body.hr_scope,
                     created_by=subject,
                 )
                 .returning(identity_mappings.c.id)
@@ -116,6 +130,19 @@ def create_identity_mapping(
                             "resolved_from_source": scope.resolved_from_source,
                         }
                         for scope in body.org_scope
+                    ],
+                )
+
+            if body.sensitive_grants:
+                conn.execute(
+                    insert(identity_mapping_sensitive_grants),
+                    [
+                        {
+                            "identity_mapping_id": mapping_id,
+                            "field_class": field_class,
+                            "granted_by": subject,
+                        }
+                        for field_class in body.sensitive_grants
                     ],
                 )
     except IntegrityError as exc:

@@ -8,6 +8,21 @@ from pydantic import BaseModel, Field, model_validator
 from app.ebs.domains import KNOWN_DOMAINS
 
 Environment = Literal["dev", "test", "uat", "prod"]
+# Mirrors identity-service/db/models.py (VALID_HR_SCOPES, VALID_FIELD_CLASSES)
+# and mcp-server's tools/sensitive.py — keep in sync by hand.
+HrScope = Literal["self", "reports", "all"]
+FieldClass = Literal[
+    "compensation",
+    "national_id",
+    "date_of_birth",
+    "bank_account",
+    "tax_id",
+    "medical",
+    "home_contact",
+]
+# Domains whose mappings carry personal or financial data. Field-class grants
+# are only meaningful there; person scope only for hcm.
+SENSITIVE_GRANT_DOMAINS = ("hcm", "finance")
 # ebs_dba is a persona, not a third backend — see identity-service/db/
 # models.py's comment on VALID_TARGET_SYSTEMS for why it doesn't fit the
 # functional (Org-scoped, FND_USER-backed) shape ebs/fusion share. DBA
@@ -70,6 +85,18 @@ class IdentityMappingCreate(BaseModel):
     # Required (at least one entry) for ebs/fusion; must be empty for
     # ebs_dba — see _check_target_system_specific_rules.
     org_scope: list[OrgScopeIn] = Field(default_factory=list)
+    # hcm only. The caller's own HR person, from GET
+    # /ebs-lookup/users/{username}/person — never hand-typed. Without it an
+    # hcm mapping cannot say whose records are "mine" and is denied at call
+    # time, so creation requires it.
+    ebs_person_id: int | None = Field(default=None, ge=1)
+    # hcm only. How far from ebs_person_id the caller may see: their own
+    # record, plus their reporting line (the default), or every record — the
+    # last being a deliberate grant for HR specialists.
+    hr_scope: HrScope = "reports"
+    # hcm and finance only. Sensitive field classes this mapping may see on
+    # records that are not its own. Empty (the default) withholds all of them.
+    sensitive_grants: list[FieldClass] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _check_target_system_specific_rules(self) -> "IdentityMappingCreate":
@@ -98,6 +125,27 @@ class IdentityMappingCreate(BaseModel):
                 )
             if self.domain not in KNOWN_DOMAINS:
                 raise ValueError(f"domain must be one of {KNOWN_DOMAINS}, got {self.domain!r}.")
+
+        # Personal/financial-data controls. These are rejected outright where
+        # they do not apply rather than silently ignored, so a mapping never
+        # looks more (or less) restricted than it is.
+        if self.target_system == "ebs_dba" or self.domain != "hcm":
+            if self.ebs_person_id is not None:
+                raise ValueError("ebs_person_id applies to hcm mappings only.")
+            if self.hr_scope != "reports":
+                raise ValueError("hr_scope applies to hcm mappings only.")
+        elif self.ebs_person_id is None and self.hr_scope != "all":
+            raise ValueError(
+                "ebs_person_id is required for hcm mappings (look it up with "
+                "GET /ebs-lookup/users/{username}/person); without it the mapping "
+                "cannot identify which records are the caller's own."
+            )
+        if self.sensitive_grants:
+            if self.target_system == "ebs_dba" or self.domain not in SENSITIVE_GRANT_DOMAINS:
+                raise ValueError(
+                    f"sensitive_grants apply to {SENSITIVE_GRANT_DOMAINS} mappings only."
+                )
+            self.sensitive_grants = sorted(set(self.sensitive_grants))
         return self
 
 
@@ -117,5 +165,8 @@ class IdentityMappingOut(BaseModel):
     updated_at: datetime | None
     updated_by: str | None
     org_scope: list[OrgScopeOut]
+    ebs_person_id: int | None = None
+    hr_scope: str = "reports"
+    sensitive_grants: list[str] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}

@@ -25,7 +25,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
 from ebsmcp.tools.registry import ToolContext, ToolSet
-from ebsmcp.tools.scoping import ROW_CAP, inventory_org_filter, run_scoped_list
+from ebsmcp.tools.scoping import MANUFACTURING_DOMAINS, ROW_CAP, inventory_org_filter, run_scoped_list
 
 
 def build_asset_work_orders_query(
@@ -98,7 +98,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             build=lambda eff: build_asset_work_orders_query(
                 eff, organization_code, asset_number, department_code, overdue_only
             ),
-            key="work_orders",
+            key="work_orders", domains=MANUFACTURING_DOMAINS,
         )
 
 

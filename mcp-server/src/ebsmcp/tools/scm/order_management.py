@@ -21,7 +21,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
 from ebsmcp.tools.registry import ToolContext, ToolSet, resolve_scoped_call, split_total_count
-from ebsmcp.tools.scoping import ROW_CAP, escape_like, org_in_clause, scoped_envelope
+from ebsmcp.tools.scoping import SCM_DOMAINS, ROW_CAP, escape_like, org_in_clause, scoped_envelope
 
 _CUSTOMER_JOINS = (
     "LEFT JOIN APPS.HZ_CUST_ACCOUNTS hca ON hca.cust_account_id = ooh.sold_to_org_id "
@@ -133,7 +133,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             "org_ids": org_ids,
         }
         with resolve_scoped_call(
-            ctx, tool_name="sales_order_status", target_system="ebs", params=params,
+            ctx, tool_name="sales_order_status", target_system="ebs", domains=SCM_DOMAINS, params=params,
             requested_org_ids=org_ids, requested_instance=instance,
         ) as (identity, effective_org_ids, connector):
             sql, binds = build_order_query(
@@ -165,7 +165,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
         """
         params = {"hold_name": hold_name, "org_ids": org_ids}
         with resolve_scoped_call(
-            ctx, tool_name="orders_on_hold", target_system="ebs", params=params,
+            ctx, tool_name="orders_on_hold", target_system="ebs", domains=SCM_DOMAINS, params=params,
             requested_org_ids=org_ids, requested_instance=instance,
         ) as (identity, effective_org_ids, connector):
             sql, binds = build_orders_on_hold_query(effective_org_ids, hold_name)
@@ -194,7 +194,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
         """
         params = {"org_ids": org_ids}
         with resolve_scoped_call(
-            ctx, tool_name="order_import_errors", target_system="ebs", params=params,
+            ctx, tool_name="order_import_errors", target_system="ebs", domains=SCM_DOMAINS, params=params,
             requested_org_ids=org_ids, requested_instance=instance,
         ) as (identity, effective_org_ids, connector):
             sql, binds = build_order_import_errors_query(effective_org_ids)

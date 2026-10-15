@@ -13,10 +13,16 @@ from __future__ import annotations
 
 from sqlalchemy import Engine, create_engine, select
 
-from ebsmcp.identity.resolver import IdentityResolver, ResolvedIdentity, TargetSystem
+from ebsmcp.identity.resolver import (
+    IdentityResolver,
+    ResolvedIdentity,
+    TargetSystem,
+    pick_by_domain,
+)
 from ebsmcp.identity.tables import (
     identity_mapping_instance_scope,
     identity_mapping_org_scope,
+    identity_mapping_sensitive_grants,
     identity_mappings,
 )
 
@@ -26,28 +32,46 @@ class PostgresIdentityResolver(IdentityResolver):
         self._engine = engine or create_engine(db_url)
         self._environment = environment
 
-    def resolve(self, subject: str, target_system: TargetSystem) -> ResolvedIdentity:
+    def resolve(
+        self,
+        subject: str,
+        target_system: TargetSystem,
+        domains: tuple[str, ...] | None = None,
+    ) -> ResolvedIdentity:
         with self._engine.connect() as conn:
-            row = conn.execute(
+            # Every open mapping, lowest id first. A person may hold one open
+            # mapping per domain (see the uniqueness index), so selecting
+            # with .first() — as this used to — returned an arbitrary one and
+            # with it an arbitrary Org scope. The choice is now made by
+            # pick_by_domain from what the calling tool declared.
+            candidates = conn.execute(
                 select(
                     identity_mappings.c.id,
                     identity_mappings.c.mapped_role,
                     identity_mappings.c.instance_scope_restricted,
-                ).where(
+                    identity_mappings.c.domain,
+                    identity_mappings.c.ebs_person_id,
+                    identity_mappings.c.hr_scope,
+                )
+                .where(
                     identity_mappings.c.entra_subject == subject,
                     identity_mappings.c.environment == self._environment,
                     identity_mappings.c.target_system == target_system,
                     identity_mappings.c.effective_end_date.is_(None),
                 )
-            ).first()
+                .order_by(identity_mappings.c.id)
+            ).all()
 
+            row = pick_by_domain(candidates, domains)
             if row is None:
+                wanted = f", domains={list(domains)!r}" if domains else ""
                 raise LookupError(
                     f"No identity mapping for subject={subject!r}, "
-                    f"environment={self._environment!r}, target_system={target_system!r}."
+                    f"environment={self._environment!r}, target_system={target_system!r}"
+                    f"{wanted}."
                 )
 
-            mapping_id, mapped_role, instance_scope_restricted = row
+            mapping_id = row.id
             org_ids = conn.execute(
                 select(identity_mapping_org_scope.c.org_id).where(
                     identity_mapping_org_scope.c.identity_mapping_id == mapping_id
@@ -55,7 +79,7 @@ class PostgresIdentityResolver(IdentityResolver):
             ).scalars().all()
 
             allowed_instances: tuple[str, ...] | None = None
-            if instance_scope_restricted:
+            if row.instance_scope_restricted:
                 allowed_instances = tuple(
                     conn.execute(
                         select(identity_mapping_instance_scope.c.instance_name).where(
@@ -64,11 +88,23 @@ class PostgresIdentityResolver(IdentityResolver):
                     ).scalars().all()
                 )
 
+            grants = frozenset(
+                conn.execute(
+                    select(identity_mapping_sensitive_grants.c.field_class).where(
+                        identity_mapping_sensitive_grants.c.identity_mapping_id == mapping_id
+                    )
+                ).scalars().all()
+            )
+
         return ResolvedIdentity(
             subject=subject,
             environment=self._environment,
             target_system=target_system,
-            mapped_role=mapped_role,
+            mapped_role=row.mapped_role,
             allowed_org_ids=tuple(org_ids),
             allowed_instances=allowed_instances,
+            domain=row.domain,
+            person_id=row.ebs_person_id,
+            hr_scope=row.hr_scope,
+            sensitive_grants=grants,
         )

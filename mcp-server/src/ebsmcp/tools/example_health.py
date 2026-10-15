@@ -12,6 +12,7 @@ from __future__ import annotations
 from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
+from ebsmcp.identity import ANY_DOMAIN
 from ebsmcp.tools.registry import ToolContext, ToolSet, resolve_scoped_call
 
 
@@ -34,6 +35,8 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             ctx,
             tool_name="server_health",
             target_system="ebs",
+            # Exposes no business data, so any open mapping may run it.
+            domains=ANY_DOMAIN,
             params={},
             requested_instance=instance,
         ) as (identity, effective_org_ids, connector):

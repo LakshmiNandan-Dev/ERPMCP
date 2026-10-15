@@ -27,7 +27,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
 from ebsmcp.tools.registry import ToolContext, ToolSet
-from ebsmcp.tools.scoping import ROW_CAP, inventory_org_filter, run_scoped_list
+from ebsmcp.tools.scoping import MANUFACTURING_DOMAINS, ROW_CAP, inventory_org_filter, run_scoped_list
 
 Direction = Literal["forward", "backward"]
 MAX_LEVELS_LIMIT = 20
@@ -122,7 +122,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             build=lambda eff: build_lot_genealogy_query(
                 eff, lot_number, item_number, organization_code, direction, max_levels
             ),
-            key="edges", row_cap=ROW_CAP * 4,
+            key="edges", domains=MANUFACTURING_DOMAINS, row_cap=ROW_CAP * 4,
         )
 
 

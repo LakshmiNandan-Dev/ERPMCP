@@ -31,7 +31,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from app.ebs.domains import resolve_domain
-from app.schemas.ebs_lookup import AssignedOrganization, AssignedResponsibility
+from app.schemas.ebs_lookup import AssignedOrganization, AssignedPerson, AssignedResponsibility
 
 # Oracle's numeric code for "profile option set at the Responsibility
 # level" — this exact value (10003) is what Oracle's own scripts and
@@ -90,8 +90,22 @@ _ORGS_BY_OPERATING_UNIT_SQL = """
 """
 
 
+# APPS-qualified, like mcp-server's catalog: on R12.2 the base-schema tables
+# are edition-based. Effective-dated, so only the row current today.
+_PERSON_SQL = """
+    SELECT ppf.person_id, ppf.full_name, ppf.employee_number
+    FROM APPS.FND_USER fu
+    JOIN APPS.PER_ALL_PEOPLE_F ppf
+      ON ppf.person_id = fu.employee_id
+     AND TRUNC(SYSDATE) BETWEEN ppf.effective_start_date AND ppf.effective_end_date
+    WHERE fu.user_name = :username
+"""
+
+
 class EBSLookupConnector(Protocol):
     def list_assigned_responsibilities(self, username: str) -> list[AssignedResponsibility]: ...
+
+    def find_person(self, username: str) -> AssignedPerson | None: ...
 
     def list_assigned_organizations(
         self, application_id: int, responsibility_id: int
@@ -121,6 +135,14 @@ class OracleEBSLookupConnector:
                 )
                 for row in cursor.fetchall()
             ]
+
+    def find_person(self, username: str) -> AssignedPerson | None:
+        with self._connect() as conn, conn.cursor() as cursor:
+            cursor.execute(_PERSON_SQL, {"username": username})
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            return AssignedPerson(person_id=row[0], full_name=row[1], employee_number=row[2])
 
     def list_assigned_organizations(
         self, application_id: int, responsibility_id: int
@@ -185,6 +207,11 @@ class MockEBSLookupConnector:
 
     def list_assigned_responsibilities(self, username: str) -> list[AssignedResponsibility]:
         return self._responsibilities.get(username.upper(), [])
+
+    def find_person(self, username: str) -> AssignedPerson | None:
+        return {
+            "JDOE": AssignedPerson(person_id=1234, full_name="John Doe", employee_number="E1234"),
+        }.get(username.upper())
 
     def list_assigned_organizations(
         self, application_id: int, responsibility_id: int

@@ -21,7 +21,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
 from ebsmcp.tools.registry import ToolContext, ToolSet, resolve_scoped_call, split_total_count
-from ebsmcp.tools.scoping import ROW_CAP, escape_like, org_in_clause, scoped_envelope
+from ebsmcp.tools.scoping import SCM_DOMAINS, ROW_CAP, escape_like, org_in_clause, scoped_envelope
 
 PoStatus = Literal[
     "APPROVED", "INCOMPLETE", "IN PROCESS", "PRE-APPROVED", "REJECTED", "REQUIRES REAPPROVAL"
@@ -171,7 +171,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             "org_ids": org_ids,
         }
         with resolve_scoped_call(
-            ctx, tool_name="purchase_order_status", target_system="ebs", params=params,
+            ctx, tool_name="purchase_order_status", target_system="ebs", domains=SCM_DOMAINS, params=params,
             requested_org_ids=org_ids, requested_instance=instance,
         ) as (identity, effective_org_ids, connector):
             sql, binds = build_po_query(
@@ -202,7 +202,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
         """
         params = {"min_days_pending": min_days_pending, "org_ids": org_ids}
         with resolve_scoped_call(
-            ctx, tool_name="requisitions_pending_approval", target_system="ebs", params=params,
+            ctx, tool_name="requisitions_pending_approval", target_system="ebs", domains=SCM_DOMAINS, params=params,
             requested_org_ids=org_ids, requested_instance=instance,
         ) as (identity, effective_org_ids, connector):
             sql, binds = build_pending_requisitions_query(effective_org_ids, min_days_pending)
@@ -231,7 +231,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
         """
         params = {"min_days_overdue": min_days_overdue, "org_ids": org_ids}
         with resolve_scoped_call(
-            ctx, tool_name="overdue_po_shipments", target_system="ebs", params=params,
+            ctx, tool_name="overdue_po_shipments", target_system="ebs", domains=SCM_DOMAINS, params=params,
             requested_org_ids=org_ids, requested_instance=instance,
         ) as (identity, effective_org_ids, connector):
             sql, binds = build_overdue_shipments_query(effective_org_ids, min_days_overdue)
@@ -253,7 +253,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
         """
         params = {"org_ids": org_ids}
         with resolve_scoped_call(
-            ctx, tool_name="po_import_rejections", target_system="ebs", params=params,
+            ctx, tool_name="po_import_rejections", target_system="ebs", domains=SCM_DOMAINS, params=params,
             requested_org_ids=org_ids, requested_instance=instance,
         ) as (identity, effective_org_ids, connector):
             sql, binds = build_po_import_rejections_query(effective_org_ids)

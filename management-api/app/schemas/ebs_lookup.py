@@ -25,3 +25,14 @@ class AssignedOrganization(BaseModel):
     # from a security profile or (unusually) something odd, not just a
     # silent single value.
     source: Literal["security_profile", "operating_unit"]
+
+
+class AssignedPerson(BaseModel):
+    """The HR person behind an FND user (FND_USER.EMPLOYEE_ID ->
+    PER_ALL_PEOPLE_F). This is what an hcm mapping's ebs_person_id is
+    resolved from, so "my own record" and "my reports" are anchored to what
+    EBS itself says rather than to anything an admin types."""
+
+    person_id: int
+    full_name: str
+    employee_number: str | None = None

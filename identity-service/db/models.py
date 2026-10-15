@@ -54,6 +54,23 @@ VALID_ENVIRONMENTS = ("dev", "test", "uat", "prod")
 # customers never get direct-DB DBA-style access to it.
 VALID_TARGET_SYSTEMS = ("ebs", "fusion", "ebs_dba")
 VALID_RESOLUTION_SOURCES = ("resolved_from_source", "manually_overridden")
+# How much of the HR population an hcm mapping may see. "self" is the caller's
+# own record, "reports" adds their direct and indirect reports through the
+# supervisor hierarchy, "all" is a deliberate admin grant for HR specialists.
+VALID_HR_SCOPES = ("self", "reports", "all")
+# Sensitive field classes an hcm/finance mapping may be explicitly granted.
+# Anything not granted is withheld for every record but the caller's own.
+# Mirrored in mcp-server/src/ebsmcp/tools/sensitive.py and management-api's
+# identity schema — keep all three in sync by hand.
+VALID_FIELD_CLASSES = (
+    "compensation",
+    "national_id",
+    "date_of_birth",
+    "bank_account",
+    "tax_id",
+    "medical",
+    "home_contact",
+)
 
 # Generic DateTime(timezone=True) silently compiles to plain Oracle DATE —
 # no time zone component at all — unless overridden per dialect like this.
@@ -132,6 +149,15 @@ identity_mappings = Table(
     # zero rows would be ambiguous between "unrestricted" and "deny all" —
     # hence this explicit flag instead.
     Column("instance_scope_restricted", Boolean, nullable=False, server_default=false()),
+    # The caller's own HR person (PER_ALL_PEOPLE_F.PERSON_ID), resolved from
+    # FND_USER.EMPLOYEE_ID during onboarding — never typed. This is what makes
+    # "my own record" and "my reports" expressible at all: an Org ID says which
+    # operating unit, not which people. Required for hcm mappings (enforced in
+    # management-api and fail-closed in mcp-server, not as a CHECK, so
+    # pre-existing rows in that domain keep loading and simply get denied).
+    Column("ebs_person_id", Integer, nullable=True),
+    # See VALID_HR_SCOPES. Only meaningful for domain hcm.
+    Column("hr_scope", String(10), nullable=False, server_default="reports"),
     Column("created_at", TZDateTime, nullable=False, server_default=func.now()),
     Column("created_by", String(320), nullable=False),
     Column("updated_at", TZDateTime, nullable=True, onupdate=func.now()),
@@ -139,6 +165,10 @@ identity_mappings = Table(
     CheckConstraint(
         f"environment IN {VALID_ENVIRONMENTS}",
         name="ck_identity_mappings_environment",
+    ),
+    CheckConstraint(
+        f"hr_scope IN {VALID_HR_SCOPES}",
+        name="ck_identity_mappings_hr_scope",
     ),
     CheckConstraint(
         f"target_system IN {VALID_TARGET_SYSTEMS}",
@@ -253,6 +283,32 @@ identity_mapping_instance_scope = Table(
     Column("instance_name", String(64), nullable=False),
     UniqueConstraint(
         "identity_mapping_id", "instance_name", name="ux_mapping_instance_scope_no_dupes"
+    ),
+)
+
+# Explicit grants of sensitive field classes for one mapping. Absence is
+# denial: a mapping with no rows here sees none of the sensitive classes of
+# anyone but itself. Deliberately a row per class rather than a delimited
+# column, same reasoning as identity_mapping_org_scope.
+identity_mapping_sensitive_grants = Table(
+    "identity_mapping_sensitive_grants",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column(
+        "identity_mapping_id",
+        Integer,
+        ForeignKey("identity_mappings.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("field_class", String(40), nullable=False),
+    Column("granted_at", TZDateTime, nullable=False, server_default=func.now()),
+    Column("granted_by", String(320), nullable=False),
+    CheckConstraint(
+        f"field_class IN {VALID_FIELD_CLASSES}",
+        name="ck_mapping_sensitive_grants_field_class",
+    ),
+    UniqueConstraint(
+        "identity_mapping_id", "field_class", name="ux_mapping_sensitive_grants_no_dupes"
     ),
 )
 

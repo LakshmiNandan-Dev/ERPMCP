@@ -104,3 +104,73 @@ def test_mapping_explicitly_restricted_to_zero_instances(resolver, seed_mapping)
     )
     identity = resolver.resolve("dba@corp.com", "ebs_dba")
     assert identity.allowed_instances == ()
+
+
+# ── domain selection, person scope and sensitive grants ──────────────────────
+
+
+def _two_mappings(seed_mapping):
+    seed_mapping(
+        subject="jdoe@corp.com", environment="prod", target_system="ebs",
+        mapped_role="AP Manager", org_ids=["204"], domain="finance",
+    )
+    seed_mapping(
+        subject="jdoe@corp.com", environment="prod", target_system="ebs",
+        mapped_role="Inventory Manager", org_ids=["300", "301"], domain="scm",
+    )
+
+
+def test_mapping_choice_follows_the_requested_domain_not_row_order(resolver, seed_mapping):
+    """The old .first() returned whichever row the database happened to
+    yield, so the same caller got a different Org scope depending on it."""
+    _two_mappings(seed_mapping)
+    scm = resolver.resolve("jdoe@corp.com", "ebs", ("scm",))
+    assert scm.domain == "scm" and set(scm.allowed_org_ids) == {"300", "301"}
+    fin = resolver.resolve("jdoe@corp.com", "ebs", ("finance",))
+    assert fin.domain == "finance" and fin.allowed_org_ids == ("204",)
+
+
+def test_no_domain_requested_never_returns_a_sensitive_mapping(resolver, seed_mapping):
+    _two_mappings(seed_mapping)
+    identity = resolver.resolve("jdoe@corp.com", "ebs")
+    assert identity.domain == "scm"
+
+
+def test_user_with_only_a_sensitive_mapping_is_denied_when_no_domain_requested(
+    resolver, seed_mapping
+):
+    seed_mapping(
+        subject="hr@corp.com", environment="prod", target_system="ebs",
+        mapped_role="HR Manager", org_ids=["204"], domain="hcm", person_id=77,
+    )
+    with pytest.raises(LookupError):
+        resolver.resolve("hr@corp.com", "ebs")
+    assert resolver.resolve("hr@corp.com", "ebs", ("hcm",)).person_id == 77
+
+
+def test_requesting_a_domain_the_user_lacks_is_denial_not_fallback(resolver, seed_mapping):
+    _two_mappings(seed_mapping)
+    with pytest.raises(LookupError, match="hcm"):
+        resolver.resolve("jdoe@corp.com", "ebs", ("hcm",))
+
+
+def test_person_scope_and_grants_are_resolved(resolver, seed_mapping):
+    seed_mapping(
+        subject="hr@corp.com", environment="prod", target_system="ebs",
+        mapped_role="HR Specialist", org_ids=["204"], domain="hcm",
+        person_id=1234, hr_scope="all", grants=["compensation", "tax_id"],
+    )
+    identity = resolver.resolve("hr@corp.com", "ebs", ("hcm",))
+    assert identity.person_id == 1234
+    assert identity.hr_scope == "all"
+    assert identity.sensitive_grants == frozenset({"compensation", "tax_id"})
+
+
+def test_mapping_with_no_grants_and_default_scope_is_narrow(resolver, seed_mapping):
+    seed_mapping(
+        subject="mgr@corp.com", environment="prod", target_system="ebs",
+        mapped_role="Manager", org_ids=["204"], domain="hcm", person_id=9,
+    )
+    identity = resolver.resolve("mgr@corp.com", "ebs", ("hcm",))
+    assert identity.sensitive_grants == frozenset()
+    assert identity.hr_scope == "reports"

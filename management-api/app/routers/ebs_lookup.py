@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.deps import admin_subject
 from app.ebs.domains import KNOWN_DOMAINS
 from app.ebs.factory import ebs_lookup_connector
-from app.schemas.ebs_lookup import AssignedOrganization, AssignedResponsibility
+from app.schemas.ebs_lookup import AssignedOrganization, AssignedPerson, AssignedResponsibility
 
 router = APIRouter(prefix="/ebs-lookup", tags=["ebs-lookup"])
 
@@ -35,6 +35,23 @@ def get_assigned_responsibilities(username: str, _caller: str = Depends(admin_su
             detail=f"No active responsibilities found for EBS username {username!r}.",
         )
     return responsibilities
+
+
+@router.get("/users/{username}/person", response_model=AssignedPerson)
+def get_assigned_person(username: str, _caller: str = Depends(admin_subject)) -> AssignedPerson:
+    """The HR person behind an EBS user — the source of an hcm mapping's
+    ebs_person_id. A user with no linked employee cannot be given an hcm
+    mapping that shows personal records, which is the correct outcome."""
+    person = ebs_lookup_connector.find_person(username)
+    if person is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"EBS user {username!r} has no linked HR person (FND_USER.EMPLOYEE_ID "
+                "is empty or not effective today)."
+            ),
+        )
+    return person
 
 
 @router.get(

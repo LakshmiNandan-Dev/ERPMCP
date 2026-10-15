@@ -29,7 +29,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
 from ebsmcp.tools.registry import ToolContext, ToolSet, resolve_scoped_call
-from ebsmcp.tools.scoping import ROW_CAP, inventory_org_filter, run_scoped_list
+from ebsmcp.tools.scoping import MANUFACTURING_DOMAINS, ROW_CAP, inventory_org_filter, run_scoped_list
 
 COST_ELEMENT_LABELS = {
     1: "Material",
@@ -247,7 +247,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             ctx, tool_name="item_cost_breakdown", params=params, org_ids=org_ids,
             instance=instance,
             build=lambda eff: build_item_cost_query(eff, organization_code, item_number, cost_type),
-            key="costs", annotate=annotate_item_cost,
+            key="costs", domains=MANUFACTURING_DOMAINS, annotate=annotate_item_cost,
         )
 
     @app.tool(annotations=read_only)
@@ -267,7 +267,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
         """
         params = {"job_name": job_name, "organization_code": organization_code, "org_ids": org_ids}
         with resolve_scoped_call(
-            ctx, tool_name="job_variance", target_system="ebs", params=params,
+            ctx, tool_name="job_variance", target_system="ebs", domains=MANUFACTURING_DOMAINS, params=params,
             requested_org_ids=org_ids, requested_instance=instance,
         ) as (identity, effective_org_ids, connector):
             sql, binds = build_job_variance_query(effective_org_ids, organization_code, job_name)
@@ -302,7 +302,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             ctx, tool_name="uncosted_transactions", params=params, org_ids=org_ids,
             instance=instance,
             build=lambda eff: build_uncosted_query(eff, organization_code, since_days),
-            key="uncosted", annotate=annotate_uncosted,
+            key="uncosted", domains=MANUFACTURING_DOMAINS, annotate=annotate_uncosted,
         )
 
     @app.tool(annotations=read_only)
@@ -321,7 +321,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
         return run_scoped_list(
             ctx, tool_name="wip_value_summary", params=params, org_ids=org_ids,
             instance=instance, build=lambda eff: build_wip_value_query(eff, organization_code),
-            key="wip_value",
+            key="wip_value", domains=MANUFACTURING_DOMAINS,
         )
 
 

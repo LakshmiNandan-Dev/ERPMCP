@@ -22,9 +22,12 @@ identity_mappings = Table(
     Column("entra_subject", String(320), nullable=False),
     Column("environment", String(10), nullable=False),
     Column("target_system", String(10), nullable=False),
+    Column("domain", String(40), nullable=True),
     Column("mapped_role", String(240), nullable=False),
     Column("effective_end_date", TZDateTime, nullable=True),
     Column("instance_scope_restricted", Boolean, nullable=False, server_default=false()),
+    Column("ebs_person_id", Integer, nullable=True),
+    Column("hr_scope", String(10), nullable=False, server_default="reports"),
 )
 
 identity_mapping_org_scope = Table(
@@ -55,4 +58,18 @@ identity_mapping_instance_scope = Table(
         nullable=False,
     ),
     Column("instance_name", String(64), nullable=False),
+)
+
+# Explicit sensitive-field-class grants for one mapping; absence is denial.
+identity_mapping_sensitive_grants = Table(
+    "identity_mapping_sensitive_grants",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column(
+        "identity_mapping_id",
+        Integer,
+        ForeignKey("identity_mappings.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("field_class", String(40), nullable=False),
 )

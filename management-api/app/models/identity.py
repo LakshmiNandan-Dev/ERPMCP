@@ -45,6 +45,8 @@ identity_mappings = Table(
     Column("domain", String(40), nullable=True),
     Column("mapped_role", String(240), nullable=False),
     Column("resolution_source", String(24), nullable=False),
+    Column("ebs_person_id", Integer, nullable=True),
+    Column("hr_scope", String(10), nullable=False),
     Column("effective_start_date", TZDateTime, nullable=False),
     Column("effective_end_date", TZDateTime, nullable=True),
     Column("created_at", TZDateTime, nullable=False),
@@ -66,6 +68,21 @@ identity_mapping_org_scope = Table(
     Column("org_id", String(64), nullable=False),
     Column("org_name", String(240), nullable=True),
     Column("resolved_from_source", Boolean, nullable=False),
+)
+
+identity_mapping_sensitive_grants = Table(
+    "identity_mapping_sensitive_grants",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column(
+        "identity_mapping_id",
+        Integer,
+        ForeignKey("identity_mappings.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("field_class", String(40), nullable=False),
+    Column("granted_at", TZDateTime, nullable=False),
+    Column("granted_by", String(320), nullable=False),
 )
 
 entra_registrations = Table(

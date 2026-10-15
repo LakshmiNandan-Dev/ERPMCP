@@ -18,7 +18,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
 from ebsmcp.tools.registry import ToolContext, ToolSet, resolve_scoped_call, split_total_count
-from ebsmcp.tools.scoping import ROW_CAP, org_in_clause, scoped_envelope
+from ebsmcp.tools.scoping import SCM_DOMAINS, ROW_CAP, org_in_clause, scoped_envelope
 
 
 def build_open_deliveries_query(
@@ -96,7 +96,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
         """
         params = {"organization_code": organization_code, "org_ids": org_ids}
         with resolve_scoped_call(
-            ctx, tool_name="open_deliveries", target_system="ebs", params=params,
+            ctx, tool_name="open_deliveries", target_system="ebs", domains=SCM_DOMAINS, params=params,
             requested_org_ids=org_ids, requested_instance=instance,
         ) as (identity, effective_org_ids, connector):
             sql, binds = build_open_deliveries_query(effective_org_ids, organization_code)
@@ -119,7 +119,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
         """
         params = {"organization_code": organization_code, "org_ids": org_ids}
         with resolve_scoped_call(
-            ctx, tool_name="backordered_lines", target_system="ebs", params=params,
+            ctx, tool_name="backordered_lines", target_system="ebs", domains=SCM_DOMAINS, params=params,
             requested_org_ids=org_ids, requested_instance=instance,
         ) as (identity, effective_org_ids, connector):
             sql, binds = build_backordered_lines_query(effective_org_ids, organization_code)

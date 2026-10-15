@@ -25,7 +25,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
 from ebsmcp.tools.registry import ToolContext, ToolSet
-from ebsmcp.tools.scoping import ROW_CAP, inventory_org_filter, run_scoped_list
+from ebsmcp.tools.scoping import MANUFACTURING_DOMAINS, ROW_CAP, inventory_org_filter, run_scoped_list
 
 JOB_STATUS_LABELS: dict[int, str] = {
     1: "Unreleased",
@@ -257,7 +257,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
         return run_scoped_list(
             ctx, tool_name="wip_job_status", params=params, org_ids=org_ids, instance=instance,
             build=lambda eff: build_job_status_query(eff, organization_code, aged_days, include_closed),
-            key="job_status", annotate=annotate_job_status,
+            key="job_status", domains=MANUFACTURING_DOMAINS, annotate=annotate_job_status,
         )
 
     @app.tool(annotations=read_only)
@@ -287,7 +287,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             build=lambda eff: build_pending_transactions_query(
                 eff, organization_code, kind, include_pending
             ),
-            key="transactions", annotate=annotate_pending_transactions,
+            key="transactions", domains=MANUFACTURING_DOMAINS, annotate=annotate_pending_transactions,
         )
 
     @app.tool(annotations=read_only)
@@ -309,7 +309,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             ctx, tool_name="job_material_shortages", params=params, org_ids=org_ids,
             instance=instance,
             build=lambda eff: build_material_shortages_query(eff, organization_code, job_name),
-            key="shortages", annotate=annotate_shortages,
+            key="shortages", domains=MANUFACTURING_DOMAINS, annotate=annotate_shortages,
         )
 
     @app.tool(annotations=read_only)
@@ -329,7 +329,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
         return run_scoped_list(
             ctx, tool_name="job_progress", params=params, org_ids=org_ids, instance=instance,
             build=lambda eff: build_job_progress_query(eff, organization_code, job_name),
-            key="operations",
+            key="operations", domains=MANUFACTURING_DOMAINS,
         )
 
 

@@ -53,6 +53,17 @@ class AuditRecord:
     timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 
+def _with_security(params: dict[str, Any], outcome: dict[str, Any]) -> dict[str, Any]:
+    """Params plus the call's `_security` block, when a sensitive tool filled
+    one in: which field classes were requested, released and withheld, and
+    under which person scope. Carried inside params so it needs no new column
+    in the audit store and lands in both sinks unchanged."""
+    security = outcome.get("security")
+    if not security:
+        return params
+    return {**params, "_security": security}
+
+
 class AuditLogger:
     def __init__(self, db_url: str | None = None, engine: Engine | None = None) -> None:
         """db_url unset (and no engine injected) keeps stdout as the only
@@ -154,7 +165,7 @@ class AuditLogger:
                     environment=environment,
                     target_system=target_system,
                     status=status,
-                    params=params,
+                    params=_with_security(params, outcome),
                     effective_org_ids=outcome.get("effective_org_ids", ()),
                     instance=outcome.get("instance"),
                     error_message=str(exc),
@@ -171,7 +182,7 @@ class AuditLogger:
                     environment=environment,
                     target_system=target_system,
                     status="ok",
-                    params=params,
+                    params=_with_security(params, outcome),
                     effective_org_ids=outcome.get("effective_org_ids", ()),
                     instance=outcome.get("instance"),
                     latency_ms=(time.monotonic() - started) * 1000,

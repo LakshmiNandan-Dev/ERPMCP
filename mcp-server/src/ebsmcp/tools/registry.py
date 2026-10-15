@@ -26,7 +26,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 
 from ebsmcp.audit import AuditLogger
 from ebsmcp.connectors.base import EBSConnector
-from ebsmcp.identity import IdentityResolver, ResolvedIdentity, TargetSystem
+from ebsmcp.identity import SENSITIVE_DOMAINS, IdentityResolver, ResolvedIdentity, TargetSystem
 from ebsmcp.policy import EntitlementFilter
 
 
@@ -166,12 +166,23 @@ def resolve_scoped_call(
     params: dict[str, Any],
     requested_org_ids: list[str] | None = None,
     requested_instance: str | None = None,
+    domains: tuple[str, ...] | None = None,
+    security: dict[str, Any] | None = None,
 ) -> Iterator[tuple[ResolvedIdentity, tuple[str, ...], EBSConnector]]:
     """The shared shape every tool follows: resolve identity, apply the
     entitlement filter, resolve which EBS instance to hit, audit the call,
     and translate anticipated failures into ToolError so the client
     actually sees is_error=True with a real reason — rather than every one
     of the DBA catalog's tools re-implementing this by hand.
+
+    domains is the calling tool's domain preference order (see
+    identity.pick_by_domain): which of the caller's open mappings serves
+    this call. Omitted, only non-sensitive-domain mappings are eligible, so
+    an hcm or finance mapping can never be picked by a tool that did not ask
+    for it. Tools returning personal or financial data must not call this
+    directly — use tools/sensitive.py's resolve_sensitive_call, which
+    passes `security`: the dict the audit record's `_security` block is read
+    from. Naming a sensitive domain without it is refused.
 
     Yields (identity, effective_org_ids, connector) for the tool body to
     use. Raises ToolError (never lets a bare LookupError escape) if the
@@ -189,6 +200,16 @@ def resolve_scoped_call(
     """
     subject = current_subject(ctx)
 
+    # A tool that returns personal or financial data must enter through
+    # tools/sensitive.py, which supplies `security` and applies row and field
+    # scoping. Asking for a sensitive domain any other way is a programming
+    # error, refused before any identity lookup or query.
+    if domains and any(d in SENSITIVE_DOMAINS for d in domains) and security is None:
+        raise ToolError(
+            f"{tool_name}: domain(s) {list(domains)!r} hold personal or financial data; "
+            "use tools.sensitive.resolve_sensitive_call, not resolve_scoped_call."
+        )
+
     with ctx.audit.audit_call(
         tool_name=tool_name,
         subject=subject,
@@ -196,8 +217,12 @@ def resolve_scoped_call(
         target_system=target_system,
         params=params,
     ) as outcome:
+        if security is not None:
+            # Same dict object: the tool fills it in as the call proceeds and
+            # the audit record picks up whatever it holds on the way out.
+            outcome["security"] = security
         try:
-            identity = ctx.identity_resolver.resolve(subject, target_system)
+            identity = ctx.identity_resolver.resolve(subject, target_system, domains)
         except LookupError as exc:
             raise ToolError(str(exc)) from exc
 

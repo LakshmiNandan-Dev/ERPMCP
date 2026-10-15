@@ -18,6 +18,7 @@ from sqlalchemy.pool import StaticPool
 
 from ebsmcp.identity.tables import (
     identity_mapping_instance_scope,
+    identity_mapping_sensitive_grants,
     identity_mapping_org_scope,
     identity_mappings,
     metadata,
@@ -123,6 +124,10 @@ def seed_mapping(engine):
         org_ids,
         closed=False,
         instances=None,
+        domain=None,
+        person_id=None,
+        hr_scope=None,
+        grants=(),
     ):
         with engine.begin() as conn:
             mapping_id = conn.execute(
@@ -133,8 +138,17 @@ def seed_mapping(engine):
                     mapped_role=mapped_role,
                     effective_end_date=datetime(2020, 1, 1, tzinfo=timezone.utc) if closed else None,
                     instance_scope_restricted=instances is not None,
+                    domain=domain,
+                    ebs_person_id=person_id,
+                    **({"hr_scope": hr_scope} if hr_scope else {}),
                 )
             ).inserted_primary_key[0]
+            for field_class in grants:
+                conn.execute(
+                    insert(identity_mapping_sensitive_grants).values(
+                        identity_mapping_id=mapping_id, field_class=field_class
+                    )
+                )
             for org_id in org_ids:
                 conn.execute(
                     insert(identity_mapping_org_scope).values(

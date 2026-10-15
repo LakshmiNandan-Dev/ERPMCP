@@ -29,7 +29,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
 from ebsmcp.tools.registry import ToolContext, ToolSet
-from ebsmcp.tools.scoping import ROW_CAP, inventory_org_filter, run_scoped_list
+from ebsmcp.tools.scoping import MANUFACTURING_DOMAINS, ROW_CAP, inventory_org_filter, run_scoped_list
 
 _EARLIEST_OPEN_START = (
     "(SELECT MIN(oap.period_start_date) FROM APPS.ORG_ACCT_PERIODS oap "
@@ -139,7 +139,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
         return run_scoped_list(
             ctx, tool_name="inventory_period_close_check", params=params, org_ids=org_ids,
             instance=instance, build=lambda eff: build_period_close_query(eff, organization_code),
-            key="organizations", annotate=annotate_period_close, summarize=summarize_period_close,
+            key="organizations", domains=MANUFACTURING_DOMAINS, annotate=annotate_period_close, summarize=summarize_period_close,
         )
 
 

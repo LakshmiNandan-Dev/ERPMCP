@@ -28,7 +28,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
 from ebsmcp.tools.registry import ToolContext, ToolSet
-from ebsmcp.tools.scoping import ROW_CAP, inventory_org_filter, run_scoped_list
+from ebsmcp.tools.scoping import MANUFACTURING_DOMAINS, ROW_CAP, inventory_org_filter, run_scoped_list
 
 MAX_LEVELS_LIMIT = 20
 
@@ -314,7 +314,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             build=lambda eff: build_bom_explosion_query(
                 eff, organization_code, item_number, max_levels, include_inactive
             ),
-            key="components", row_cap=ROW_CAP * 4,
+            key="components", domains=MANUFACTURING_DOMAINS, row_cap=ROW_CAP * 4,
         )
 
     @app.tool(annotations=read_only)
@@ -342,7 +342,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             build=lambda eff: build_where_used_query(
                 eff, organization_code, component_number, max_levels, include_inactive
             ),
-            key="assemblies",
+            key="assemblies", domains=MANUFACTURING_DOMAINS,
         )
 
     @app.tool(annotations=read_only)
@@ -362,7 +362,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
         return run_scoped_list(
             ctx, tool_name="routing_detail", params=params, org_ids=org_ids, instance=instance,
             build=lambda eff: build_routing_detail_query(eff, organization_code, item_number),
-            key="operations", row_cap=ROW_CAP * 2,
+            key="operations", domains=MANUFACTURING_DOMAINS, row_cap=ROW_CAP * 2,
         )
 
     @app.tool(annotations=read_only)
@@ -382,7 +382,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
         return run_scoped_list(
             ctx, tool_name="pending_ecos", params=params, org_ids=org_ids, instance=instance,
             build=lambda eff: build_pending_ecos_query(eff, organization_code, item_number),
-            key="ecos",
+            key="ecos", domains=MANUFACTURING_DOMAINS,
         )
 
     @app.tool(annotations=read_only)
@@ -407,7 +407,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             ctx, tool_name="bom_integrity_check", params=params, org_ids=org_ids,
             instance=instance,
             build=lambda eff: build_integrity_query(eff, organization_code, check),
-            key="findings",
+            key="findings", domains=MANUFACTURING_DOMAINS,
         )
 
 

@@ -14,6 +14,14 @@ from ebsmcp.tools.registry import ToolContext, resolve_scoped_call, split_total_
 
 ROW_CAP = 50
 
+# Domain preference orders (see identity.pick_by_domain) for the functional
+# families. scm and manufacturing share data and responsibilities, so each
+# accepts the other's mapping, preferring its own; "other" catches
+# responsibilities from applications outside the known pillars. Neither
+# accepts finance or hcm — those mappings are never selected here.
+SCM_DOMAINS: tuple[str, ...] = ("scm", "manufacturing", "other")
+MANUFACTURING_DOMAINS: tuple[str, ...] = ("manufacturing", "scm", "other")
+
 
 def org_in_clause(column: str, org_ids: tuple[str, ...]) -> tuple[str, dict[str, Any]]:
     """`column IN (:scm_org_0, :scm_org_1, ...)` with one bind per Org ID.
@@ -81,6 +89,7 @@ def run_scoped_list(
     instance: str | None,
     build: Callable[[tuple[str, ...]], tuple[str, dict[str, Any]]],
     key: str,
+    domains: tuple[str, ...] | None = None,
     row_cap: int = ROW_CAP,
     annotate: Callable[[list[dict]], list[dict]] | None = None,
     summarize: Callable[[list[dict], int | None], dict] | None = None,
@@ -91,7 +100,7 @@ def run_scoped_list(
     model never has to infer a code or a verdict from raw rows."""
     with resolve_scoped_call(
         ctx, tool_name=tool_name, target_system="ebs", params=params,
-        requested_org_ids=org_ids, requested_instance=instance,
+        requested_org_ids=org_ids, requested_instance=instance, domains=domains,
     ) as (identity, effective_org_ids, connector):
         sql, binds = build(effective_org_ids)
         rows, total = split_total_count(connector.run(sql, binds))

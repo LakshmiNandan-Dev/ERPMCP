@@ -416,6 +416,32 @@ hashes — never in plaintext, not even transiently in a migration.
 - **Environment isolation.** One deployment serves exactly one deploy stage,
   with its own secrets, service accounts, and audit store.
 
+### Personal and financial data (hcm, finance)
+
+Org scoping answers "which operating units", which is the wrong question for
+people and money. Tools in the `hcm` and `finance` families resolve through a
+separate door, [tools/sensitive.py](mcp-server/src/ebsmcp/tools/sensitive.py),
+which adds three controls on top of the five steps above:
+
+| Control | What it enforces |
+|---|---|
+| **Domain** | An hcm tool runs only under an `hcm` mapping, a finance tool only under `finance`. A user onboarded for SCM is not thereby entitled to payroll. `scm`/`manufacturing` tools can never be served by an hcm or finance mapping. |
+| **Row scope (hcm)** | Whose record. `hr_scope` on the mapping is `self`, `reports` (own record plus the supervisor hierarchy — the default) or `all` (an explicit grant for HR specialists). Built from the resolved identity, never a tool argument. A mapping with no linked HR person is denied, not unrestricted. |
+| **Field scope** | Salary, national ID, date of birth, bank account, tax ID, medical and home contact are withheld unless that class is explicitly granted on the mapping. The caller's own record is visible. Withheld columns are emitted as `NULL` in the SELECT — never fetched and filtered later — and the response lists what was withheld. |
+
+Onboarding an hcm mapping therefore needs the caller's HR person, resolved
+from `GET /ebs-lookup/users/{username}/person` (FND_USER.EMPLOYEE_ID →
+PER_ALL_PEOPLE_F), plus optional `hr_scope` and `sensitive_grants`. Every call
+writes a `_security` block into its audit params: domain, person scope, and
+which field classes were requested, released and withheld.
+
+> **Status:** the framework, schema and management-API validation are in
+> place and tested; **no HCM or finance tools exist yet**, so nothing can
+> ship unprotected. Not yet built: ledger / GL data-access-set scoping for
+> finance (finance is scoped by operating unit only for now) and the
+> admin-console UI for `hr_scope` and `sensitive_grants` — the API accepts
+> them today.
+
 ### Before you go to production
 
 Two things in this repo are dev defaults, not production settings:
@@ -490,10 +516,13 @@ tool cannot quietly introduce a different query style.
    entitlement, routing, and audit. Functional tools can use
    `run_scoped_list` from [tools/scoping.py](mcp-server/src/ebsmcp/tools/scoping.py),
    which also provides the Org ID bind helpers.
-2. Keep query construction in a pure `build_*` function and unit-test it
+2. For `hcm`/`finance`, resolve through `tools/sensitive.py`
+   (`resolve_sensitive_call`), never `resolve_scoped_call` — a test fails the
+   build otherwise.
+3. Keep query construction in a pure `build_*` function and unit-test it
    directly; decide summaries and verdicts in pure Python functions too.
-3. Export a `ToolSet(name=..., register=_register)`.
-4. Add it to the mount list in [server.py](mcp-server/src/ebsmcp/server.py).
+4. Export a `ToolSet(name=..., register=_register)`.
+5. Add it to the mount list in [server.py](mcp-server/src/ebsmcp/server.py).
 
 `scm/` and `manufacturing/` are populated; placeholder packages remain for
 `finance/`, `hcm/`, and `fusion/`.

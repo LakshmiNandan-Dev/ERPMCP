@@ -23,7 +23,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
 from ebsmcp.tools.registry import ToolContext, ToolSet, resolve_scoped_call, split_total_count
-from ebsmcp.tools.scoping import ROW_CAP, escape_like, org_in_clause
+from ebsmcp.tools.scoping import SCM_DOMAINS, ROW_CAP, escape_like, org_in_clause
 
 
 def build_onhand_query(
@@ -160,7 +160,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             "org_ids": org_ids,
         }
         with resolve_scoped_call(
-            ctx, tool_name="onhand_quantity", target_system="ebs", params=params,
+            ctx, tool_name="onhand_quantity", target_system="ebs", domains=SCM_DOMAINS, params=params,
             requested_org_ids=org_ids, requested_instance=instance,
         ) as (identity, effective_org_ids, connector):
             sql, binds = build_onhand_query(
@@ -190,7 +190,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
             "org_ids": org_ids,
         }
         with resolve_scoped_call(
-            ctx, tool_name="item_lookup", target_system="ebs", params=params,
+            ctx, tool_name="item_lookup", target_system="ebs", domains=SCM_DOMAINS, params=params,
             requested_org_ids=org_ids, requested_instance=instance,
         ) as (identity, effective_org_ids, connector):
             sql, binds = build_item_lookup_query(effective_org_ids, item_prefix, organization_code)
@@ -212,7 +212,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
         """
         params = {"organization_code": organization_code, "org_ids": org_ids}
         with resolve_scoped_call(
-            ctx, tool_name="inventory_transaction_errors", target_system="ebs", params=params,
+            ctx, tool_name="inventory_transaction_errors", target_system="ebs", domains=SCM_DOMAINS, params=params,
             requested_org_ids=org_ids, requested_instance=instance,
         ) as (identity, effective_org_ids, connector):
             sql, binds = build_transaction_errors_query(effective_org_ids, organization_code)

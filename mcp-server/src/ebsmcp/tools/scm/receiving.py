@@ -20,7 +20,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
 from ebsmcp.tools.registry import ToolContext, ToolSet, resolve_scoped_call, split_total_count
-from ebsmcp.tools.scoping import ROW_CAP, org_in_clause, scoped_envelope
+from ebsmcp.tools.scoping import SCM_DOMAINS, ROW_CAP, org_in_clause, scoped_envelope
 
 
 def build_receiving_errors_query(
@@ -71,7 +71,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
         """
         params = {"organization_code": organization_code, "org_ids": org_ids}
         with resolve_scoped_call(
-            ctx, tool_name="receiving_interface_errors", target_system="ebs", params=params,
+            ctx, tool_name="receiving_interface_errors", target_system="ebs", domains=SCM_DOMAINS, params=params,
             requested_org_ids=org_ids, requested_instance=instance,
         ) as (identity, effective_org_ids, connector):
             sql, binds = build_receiving_errors_query(effective_org_ids, organization_code)

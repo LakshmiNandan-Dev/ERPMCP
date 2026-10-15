@@ -35,7 +35,7 @@ from ebsmcp.tools.manufacturing.wip import (
     build_pending_transactions_query,
 )
 from ebsmcp.tools.registry import ToolContext, ToolSet, resolve_scoped_call, split_total_count
-from ebsmcp.tools.scoping import ROW_CAP, inventory_org_filter
+from ebsmcp.tools.scoping import MANUFACTURING_DOMAINS, ROW_CAP, inventory_org_filter
 
 _TERMINAL = {7, 12}
 
@@ -202,7 +202,7 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
         """
         params = {"job_name": job_name, "organization_code": organization_code, "org_ids": org_ids}
         with resolve_scoped_call(
-            ctx, tool_name="diagnose_job", target_system="ebs", params=params,
+            ctx, tool_name="diagnose_job", target_system="ebs", domains=MANUFACTURING_DOMAINS, params=params,
             requested_org_ids=org_ids, requested_instance=instance,
         ) as (identity, effective_org_ids, connector):
             sql, binds = build_job_header_query(effective_org_ids, organization_code, job_name)
