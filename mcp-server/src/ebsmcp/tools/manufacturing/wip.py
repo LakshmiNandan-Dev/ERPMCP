@@ -5,16 +5,19 @@ Scoping: every WIP table carries the inventory ORGANIZATION_ID, scoped
 through APPS.ORG_ORGANIZATION_DEFINITIONS.OPERATING_UNIT like the SCM
 inventory tools.
 
-Confidence: written from the documented R12 data model and NOT yet run
-against a live instance (unit-tested query construction only). Code values
-assumed, all to verify on first live access: WIP_DISCRETE_JOBS.STATUS_TYPE
-(1 unreleased, 3 released, 4 complete, 5 complete-no-charges, 6 on hold,
-7 cancelled, 12 closed, 14 pending close, 15 failed close); interface
-PROCESS_STATUS (1 pending, 2 running, 3 error); error text joined from
-WIP_TXN_INTERFACE_ERRORS on TRANSACTION_ID. "Unstarted" for a released job
-is approximated as QUANTITY_COMPLETED = 0 — it does not look at move
-transactions. Completion-transaction errors sit in the material interface;
-use inventory_transaction_errors for those.
+Confidence: written from the documented R12 data model, then executed against
+a live R12.2 instance on 2026-10-15. Every query ran; job_progress was
+corrected there (WIP_OPERATIONS has no SCHEDULED_COMPLETION_DATE — the
+schedule is FIRST_UNIT_START_DATE / LAST_UNIT_COMPLETION_DATE). The shortage
+query's result was checked: every returned row has outstanding quantity above
+on-hand. Code values assumed and not independently verified:
+WIP_DISCRETE_JOBS.STATUS_TYPE (1 unreleased, 3 released, 4 complete,
+5 complete-no-charges, 6 on hold, 7 cancelled, 12 closed, 14 pending close,
+15 failed close); interface PROCESS_STATUS (1 pending, 2 running, 3 error);
+error text joined from WIP_TXN_INTERFACE_ERRORS on TRANSACTION_ID. "Unstarted"
+for a released job is approximated as QUANTITY_COMPLETED = 0 — it does not
+look at move transactions. Completion-transaction errors sit in the material
+interface; use inventory_transaction_errors for those.
 """
 
 from __future__ import annotations
@@ -211,8 +214,9 @@ def build_job_progress_query(
         "wo.operation_seq_num, bd.department_code, wo.description, "
         "wo.quantity_in_queue, wo.quantity_running, wo.quantity_waiting_to_move, "
         "wo.quantity_rejected, wo.quantity_scrapped, wo.quantity_completed, "
-        "wo.scheduled_start_date, wo.scheduled_completion_date, "
-        "COUNT(*) OVER () AS total_count "
+        "wo.first_unit_start_date AS scheduled_start_date, "
+        "wo.last_unit_completion_date AS scheduled_completion_date, "
+        "wo.date_last_moved, COUNT(*) OVER () AS total_count "
         "FROM APPS.WIP_OPERATIONS wo "
         "JOIN APPS.WIP_ENTITIES we ON we.wip_entity_id = wo.wip_entity_id "
         "AND we.organization_id = wo.organization_id "

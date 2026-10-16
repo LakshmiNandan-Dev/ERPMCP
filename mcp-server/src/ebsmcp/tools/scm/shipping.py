@@ -4,8 +4,8 @@ Scoping: WSH_NEW_DELIVERIES / WSH_DELIVERY_DETAILS carry the shipping
 (inventory) ORGANIZATION_ID, scoped through
 APPS.ORG_ORGANIZATION_DEFINITIONS.OPERATING_UNIT like the Inventory tools.
 
-Confidence: written from the documented R12 data model and NOT yet run
-against a live instance. Assumptions to verify: WSH_NEW_DELIVERIES
+Confidence: written from the documented R12 data model and then executed against a live R12.2 instance on 2026-10-15: every query ran
+without error, and row semantics were checked only where noted below. Assumptions to verify: WSH_NEW_DELIVERIES
 .STATUS_CODE 'OP' = open, and WSH_DELIVERY_DETAILS.RELEASED_STATUS 'B' =
 backordered with SOURCE_CODE 'OE' for sales-order lines.
 """

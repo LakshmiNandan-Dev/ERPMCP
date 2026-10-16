@@ -6,8 +6,8 @@ inventory organization (TO_ORGANIZATION_ID) -> APPS.ORG_ORGANIZATION_DEFINITIONS
 defaulted by the receiving processor) are excluded by that join and would be
 undercounted.
 
-Confidence: written from the documented R12 data model and NOT yet run
-against a live instance. Assumptions to verify: PROCESSING_STATUS_CODE =
+Confidence: written from the documented R12 data model and then executed against a live R12.2 instance on 2026-10-15: every query ran
+without error, and row semantics were checked only where noted below. Assumptions to verify: PROCESSING_STATUS_CODE =
 'ERROR' marks a failed row, and PO_INTERFACE_ERRORS.INTERFACE_TRANSACTION_ID
 links error text to the interface row.
 """

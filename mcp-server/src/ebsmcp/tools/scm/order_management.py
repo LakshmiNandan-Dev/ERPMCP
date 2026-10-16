@@ -3,8 +3,8 @@
 Scoping: OE_ORDER_HEADERS_ALL carries the operating-unit ORG_ID, applied as
 `org_id IN (...)`.
 
-Confidence: written from the documented R12 data model and NOT yet run
-against a live instance (unit-tested query construction only). Assumptions
+Confidence: written from the documented R12 data model and then executed against a live R12.2 instance on 2026-10-15: every query ran
+without error, and row semantics were checked only where noted below. Assumptions
 to verify on first live access: the OE_ORDER_HOLDS_ALL -> OE_HOLD_SOURCES_ALL
 -> OE_HOLD_DEFINITIONS join chain, RELEASED_FLAG = 'N' meaning an active hold,
 and that LINE_ID IS NULL isolates order-level (header) holds. Line-level

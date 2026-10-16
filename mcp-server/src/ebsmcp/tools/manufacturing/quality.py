@@ -7,16 +7,21 @@ fixed column set to write reviewed SQL against without introspecting a real
 instance's plans. They should be added once a live instance can be queried.
 
 Scoping: lots are scoped through MTL_LOT_NUMBERS.ORGANIZATION_ID ->
-APPS.ORG_ORGANIZATION_DEFINITIONS.OPERATING_UNIT. The trace only returns
-edges whose lot is in a permitted operating unit, so a lineage that passes
-through a lot in an operating unit the caller cannot see stops there rather
-than leaking it.
+APPS.ORG_ORGANIZATION_DEFINITIONS.OPERATING_UNIT, applied to the starting lot
+and to every lot returned. The trace walks through intermediate WIP jobs
+(a lot is consumed into a job, which produces the next lot) without showing
+them, and never shows a lot outside the caller's operating units.
 
-Confidence: written from the documented R12 data model and NOT yet run
-against a live instance (unit-tested query construction only). Assumptions
-to verify: MTL_LOT_NUMBERS.GEN_OBJECT_ID links a lot to
-MTL_OBJECT_GENEALOGY.OBJECT_ID / PARENT_OBJECT_ID. Serial-number genealogy is
-deliberately not traced — only lot-to-lot edges.
+Confidence: written from the documented R12 data model, then executed against
+a live R12.2 instance on 2026-10-15, which corrected it: the graph is
+lot -> job -> lot, not lot -> lot, and the first version returned nothing for
+any lot that had been consumed into a job. After the fix, forward from lot
+LPU2500 reached CP8200 and backward from CP8200 reached LPU2500 and LPU8200,
+two hops each (the job in between). MTL_LOT_NUMBERS.GEN_OBJECT_ID links a lot
+to MTL_OBJECT_GENEALOGY.OBJECT_ID / PARENT_OBJECT_ID. On that instance a
+lot -> job edge carried OBJECT_TYPE 5 and a job -> lot edge OBJECT_TYPE 1, so
+OBJECT_TYPE is not a node-type column and nothing here depends on it. Serial
+genealogy is deliberately not traced — only lots are returned.
 """
 
 from __future__ import annotations
@@ -41,15 +46,24 @@ def build_lot_genealogy_query(
     direction: Direction,
     max_levels: int,
 ) -> tuple[str, dict[str, Any]]:
-    """Pure function, unit-tested directly. Each row is one genealogy edge:
-    parent_lot_number -> lot_number. forward walks from the lot to what was
-    made from it; backward walks to what it was made from."""
+    """Pure function, unit-tested directly. Every lot reached from (forward)
+    or leading to (backward) the starting lot, with the number of genealogy
+    hops from it.
+
+    The traversal runs over MTL_OBJECT_GENEALOGY with no joins, because the
+    graph is lot -> job -> lot: verified on a live instance (2026-10-15) that
+    a lot's children are WIP jobs (OBJECT_TYPE 5), which in turn produce the
+    next lots. Joining to MTL_LOT_NUMBERS inside the hierarchy — the first
+    version — dropped the job nodes and so cut every trace at its first hop.
+    Lots are joined, and scoped to the caller's operating units, only in the
+    outer query: intermediate jobs are walked but never shown, and a lot in
+    an operating unit the caller cannot see is neither shown nor named as
+    anyone's parent."""
     where, binds = inventory_org_filter(org_ids, organization_code)
     scope = " AND ".join(where)
     binds["lot_number"] = lot_number
     binds["max_levels"] = max(1, min(max_levels, MAX_LEVELS_LIMIT))
 
-    start_filter = "st.lot_number = :lot_number"
     start_item_join = ""
     if item_number:
         start_item_join = (
@@ -61,30 +75,40 @@ def build_lot_genealogy_query(
     start_lots = (
         "(SELECT st.gen_object_id FROM APPS.MTL_LOT_NUMBERS st "
         "JOIN APPS.ORG_ORGANIZATION_DEFINITIONS ood ON ood.organization_id = st.organization_id "
-        f"{start_item_join}WHERE {start_filter} AND {scope})"
+        f"{start_item_join}WHERE st.lot_number = :lot_number AND {scope})"
     )
     if direction == "forward":
+        reached = "mog.object_id"
         start = f"START WITH mog.parent_object_id IN {start_lots} "
         connect = "CONNECT BY NOCYCLE PRIOR mog.object_id = mog.parent_object_id "
     else:
+        reached = "mog.parent_object_id"
         start = f"START WITH mog.object_id IN {start_lots} "
         connect = "CONNECT BY NOCYCLE PRIOR mog.parent_object_id = mog.object_id "
 
-    sql = (
-        "SELECT LEVEL AS genealogy_level, mlp.lot_number AS parent_lot_number, "
-        "mln.lot_number, msi.segment1 AS item_number, ood.organization_code, "
-        "mog.genealogy_type, mog.start_date_active, mog.end_date_active, "
-        "COUNT(*) OVER () AS total_count "
+    inner = (
+        f"SELECT LEVEL AS hops, {reached} AS reached_object_id, "
+        "SYS_CONNECT_BY_PATH(TO_CHAR(mog.object_id), '>') AS sort_path "
         "FROM APPS.MTL_OBJECT_GENEALOGY mog "
-        "JOIN APPS.MTL_LOT_NUMBERS mln ON mln.gen_object_id = mog.object_id "
+        f"{start}{connect}"
+        "AND LEVEL <= :max_levels"
+    )
+    # Outer query: one row per lot (the same lot is reached once per edge and
+    # per path — verified live, a lot made by one job appeared twice) at its
+    # nearest hop count, in connect-by order. GROUP BY, not DISTINCT, so the
+    # COUNT(*) OVER () total counts lots; ORDER SIBLINGS BY cannot share a
+    # query with that total (ORA-30929, verified live).
+    sql = (
+        "SELECT MIN(t.hops) AS hops, mln.lot_number, msi.segment1 AS item_number, "
+        "ood.organization_code, COUNT(*) OVER () AS total_count "
+        f"FROM ({inner}) t "
+        "JOIN APPS.MTL_LOT_NUMBERS mln ON mln.gen_object_id = t.reached_object_id "
         "JOIN APPS.MTL_SYSTEM_ITEMS_B msi ON msi.inventory_item_id = mln.inventory_item_id "
         "AND msi.organization_id = mln.organization_id "
         "JOIN APPS.ORG_ORGANIZATION_DEFINITIONS ood "
         f"ON ood.organization_id = mln.organization_id AND {scope} "
-        "LEFT JOIN APPS.MTL_LOT_NUMBERS mlp ON mlp.gen_object_id = mog.parent_object_id "
-        f"{start}{connect}"
-        "AND LEVEL <= :max_levels "
-        "ORDER SIBLINGS BY mln.lot_number "
+        "GROUP BY mln.lot_number, msi.segment1, ood.organization_code "
+        "ORDER BY MIN(t.hops), mln.lot_number "
         f"FETCH FIRST {ROW_CAP * 4} ROWS ONLY"
     )
     return sql, binds
@@ -105,10 +129,13 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
     ) -> dict:
         """Trace a lot through genealogy for a recall. direction "forward"
         lists the lots made from this lot (where did it go); "backward"
-        lists the lots it was made from (where did it come from). Each row
-        is one edge, parent_lot_number to lot_number, with item and
-        organization. Pass item_number when the lot number is reused across
-        items. Lot-to-lot only (serials are not traced). max_levels is
+        lists the lots it was made from (where did it come from). Lots are
+        linked through the WIP jobs that consumed and produced them; the
+        jobs are walked but not listed. Each row is a lot reached, with its
+        item, organization and hops (genealogy steps from the starting lot,
+        counting the jobs in between, so a lot made in one job is 2 hops
+        away). Pass item_number when the lot number is reused across items.
+        Lots only; serials are not traced. max_levels counts hops and is
         capped at 20; output capped at 200 rows with total_count. Call
         list_ebs_instances first if unsure which EBS instance names this
         deployment has.

@@ -5,20 +5,22 @@ Scoping: cost data carries the inventory ORGANIZATION_ID, scoped through
 APPS.ORG_ORGANIZATION_DEFINITIONS.OPERATING_UNIT. Costs are per organization
 so item_cost_breakdown and job_variance require/accept organization_code.
 
-Confidence: written from the documented R12 data model and NOT yet run
-against a live instance (unit-tested query construction only). Assumptions
-to verify: CST_ITEM_COST_DETAILS.COST_ELEMENT_ID (1 material, 2 material
-overhead, 3 resource, 4 outside processing, 5 overhead) and LEVEL_TYPE
-(1 this level, 2 previous level); MTL_MATERIAL_TRANSACTIONS.COSTED_FLAG 'N'
-pending / 'E' error; and the full WIP_PERIOD_BALANCES column set
-(TL_/PL_ x MATERIAL, MATERIAL_OVERHEAD, RESOURCE, OVERHEAD,
-OUTSIDE_PROCESSING x _IN/_OUT/_VAR) — a misspelt column there fails the
-whole query with ORA-00904, so check that first. job_variance and
-wip_value_summary read cumulative period balances, not individual
-transactions: "in" is charged to the job, "out" is relieved at standard,
-"variance" is posted at close. uncosted_transactions scans
-MTL_MATERIAL_TRANSACTIONS and can be slow on a large instance; it is bounded
-by since_days.
+Confidence: written from the documented R12 data model, then executed against
+a live R12.2 instance on 2026-10-15. Every query ran without error after
+job_variance and wip_value_summary were corrected to the column set the
+instance really has (see _WPB_COLUMNS: no TL_MATERIAL_IN, no
+TL_MATERIAL_OVERHEAD_IN, no CLASS_CODE on WIP_PERIOD_BALANCES, and a scrap
+element). job_variance's totals were cross-checked against an independent SUM
+of every _IN column for one job and matched. Still unverified:
+CST_ITEM_COST_DETAILS.COST_ELEMENT_ID (1 material, 2 material overhead,
+3 resource, 4 outside processing, 5 overhead) and LEVEL_TYPE (1 this level,
+2 previous level), and MTL_MATERIAL_TRANSACTIONS.COSTED_FLAG 'N' pending /
+'E' error (uncosted_transactions returned no rows on that instance, so it
+has not been exercised with data). job_variance and wip_value_summary read
+cumulative period balances, not individual transactions: "in" is charged to
+the job, "out" is relieved at standard, "variance" is posted at close.
+uncosted_transactions scans MTL_MATERIAL_TRANSACTIONS and can be slow on a
+large instance; it is bounded by since_days.
 """
 
 from __future__ import annotations
@@ -42,19 +44,57 @@ LEVEL_LABELS = {1: "This Level", 2: "Previous Level"}
 COSTED_FLAG_LABELS = {"N": "Pending", "E": "Error"}
 
 # WIP_PERIOD_BALANCES element stems, in the order they are reported.
-WPB_ELEMENTS = ("material", "material_overhead", "resource", "overhead", "outside_processing")
+WPB_ELEMENTS = (
+    "material",
+    "material_overhead",
+    "resource",
+    "overhead",
+    "outside_processing",
+    "scrap",
+)
+
+# The columns that actually exist, as listed by ALL_TAB_COLUMNS on a live
+# R12.2 instance (2026-10-15). The table is not symmetric: there is no
+# TL_MATERIAL_IN or TL_MATERIAL_OVERHEAD_IN (material is only charged at the
+# previous level), and scrap exists only at this level. Building the SELECT
+# from this set — emitting a literal 0 for a column the table lacks — is what
+# keeps one wrong column name from failing the whole query with ORA-00904,
+# which is exactly what the symmetric guess did.
+_WPB_COLUMNS: frozenset[str] = frozenset(
+    {
+        "tl_resource_in", "tl_overhead_in", "tl_outside_processing_in", "tl_scrap_in",
+        "pl_material_in", "pl_material_overhead_in", "pl_resource_in", "pl_overhead_in",
+        "pl_outside_processing_in",
+        "tl_material_out", "tl_material_overhead_out", "tl_resource_out", "tl_overhead_out",
+        "tl_outside_processing_out", "tl_scrap_out",
+        "pl_material_out", "pl_material_overhead_out", "pl_resource_out", "pl_overhead_out",
+        "pl_outside_processing_out",
+        "tl_material_var", "tl_material_overhead_var", "tl_resource_var", "tl_overhead_var",
+        "tl_outside_processing_var", "tl_scrap_var",
+        "pl_material_var", "pl_material_overhead_var", "pl_resource_var", "pl_overhead_var",
+        "pl_outside_processing_var",
+    }
+)
+
+
+def _wpb_total(element: str, flow: str) -> str:
+    """SQL for SUM(this level + previous level) of one element/flow, using
+    only columns the table really has."""
+    parts = [
+        f"NVL(wpb.{level}_{element}_{flow}, 0)"
+        for level in ("tl", "pl")
+        if f"{level}_{element}_{flow}" in _WPB_COLUMNS
+    ]
+    return " + ".join(parts) if parts else "0"
 
 
 def _wpb_sums() -> str:
-    """SUM(TL_x + PL_x) for in/out/var per element, aliased x_in/x_out/x_var."""
-    parts = []
-    for element in WPB_ELEMENTS:
-        for flow in ("in", "out", "var"):
-            parts.append(
-                f"SUM(NVL(wpb.tl_{element}_{flow}, 0) + NVL(wpb.pl_{element}_{flow}, 0)) "
-                f"AS {element}_{flow}"
-            )
-    return ", ".join(parts)
+    """SUM of in/out/var per element, aliased x_in/x_out/x_var."""
+    return ", ".join(
+        f"SUM({_wpb_total(element, flow)}) AS {element}_{flow}"
+        for element in WPB_ELEMENTS
+        for flow in ("in", "out", "var")
+    )
 
 
 def build_item_cost_query(
@@ -134,9 +174,13 @@ def summarize_job_variance(rows: list[dict]) -> dict:
     elements = []
     totals = {"in": 0.0, "out": 0.0, "var": 0.0}
     for element in WPB_ELEMENTS:
-        charged = float(row.get(f"{element}_in") or 0)
-        relieved = float(row.get(f"{element}_out") or 0)
-        variance = float(row.get(f"{element}_var") or 0)
+        # Rounded to the currency's precision: the sums are float arithmetic
+        # on NUMBER columns, and an exactly-balanced job otherwise reports an
+        # unrelieved balance of 1.8e-12 (seen on a live instance), which a
+        # model would narrate as a non-zero amount.
+        charged = round(float(row.get(f"{element}_in") or 0), 4)
+        relieved = round(float(row.get(f"{element}_out") or 0), 4)
+        variance = round(float(row.get(f"{element}_var") or 0), 4)
         totals["in"] += charged
         totals["out"] += relieved
         totals["var"] += variance
@@ -146,10 +190,11 @@ def summarize_job_variance(rows: list[dict]) -> dict:
                 "charged": charged,
                 "relieved_at_standard": relieved,
                 "variance_posted": variance,
-                "unrelieved_balance": charged - relieved - variance,
+                "unrelieved_balance": round(charged - relieved - variance, 4),
             }
         )
-    totals["unrelieved_balance"] = totals["in"] - totals["out"] - totals["var"]
+    totals = {k: round(v, 4) for k, v in totals.items()}
+    totals["unrelieved_balance"] = round(totals["in"] - totals["out"] - totals["var"], 4)
     return {"found": True, "elements": elements, "totals": totals}
 
 
@@ -193,29 +238,31 @@ def build_wip_value_query(
 ) -> tuple[str, dict[str, Any]]:
     """Pure function, unit-tested directly. Net WIP balance by accounting
     class (charged - relieved - variance, all periods; closed jobs net to
-    zero because their variance is posted)."""
+    zero because their variance is posted). The class comes from the discrete
+    job (WIP_DISCRETE_JOBS.CLASS_CODE) — WIP_PERIOD_BALANCES itself carries
+    only CLASS_TYPE — so repetitive schedules, which have no discrete job,
+    are not included."""
     where, binds = inventory_org_filter(org_ids, organization_code)
-    net = " + ".join(
-        f"SUM(NVL(wpb.tl_{e}_in, 0) + NVL(wpb.pl_{e}_in, 0) "
-        f"- NVL(wpb.tl_{e}_out, 0) - NVL(wpb.pl_{e}_out, 0) "
-        f"- NVL(wpb.tl_{e}_var, 0) - NVL(wpb.pl_{e}_var, 0))"
+    per_element = ", ".join(
+        f"SUM({_wpb_total(e, 'in')} - ({_wpb_total(e, 'out')}) - ({_wpb_total(e, 'var')})) "
+        f"AS {e}_balance"
         for e in WPB_ELEMENTS
     )
-    per_element = ", ".join(
-        f"SUM(NVL(wpb.tl_{e}_in, 0) + NVL(wpb.pl_{e}_in, 0) "
-        f"- NVL(wpb.tl_{e}_out, 0) - NVL(wpb.pl_{e}_out, 0) "
-        f"- NVL(wpb.tl_{e}_var, 0) - NVL(wpb.pl_{e}_var, 0)) AS {e}_balance"
+    net = " + ".join(
+        f"SUM({_wpb_total(e, 'in')} - ({_wpb_total(e, 'out')}) - ({_wpb_total(e, 'var')}))"
         for e in WPB_ELEMENTS
     )
     sql = (
-        "SELECT ood.organization_code, wpb.class_code, "
+        "SELECT ood.organization_code, wdj.class_code, "
         f"{per_element}, ({net}) AS total_wip_value, "
         "COUNT(*) OVER () AS total_count "
         "FROM APPS.WIP_PERIOD_BALANCES wpb "
+        "JOIN APPS.WIP_DISCRETE_JOBS wdj ON wdj.wip_entity_id = wpb.wip_entity_id "
+        "AND wdj.organization_id = wpb.organization_id "
         "JOIN APPS.ORG_ORGANIZATION_DEFINITIONS ood ON ood.organization_id = wpb.organization_id "
         f"WHERE {' AND '.join(where)} "
-        "GROUP BY ood.organization_code, wpb.class_code "
-        "ORDER BY ood.organization_code, wpb.class_code "
+        "GROUP BY ood.organization_code, wdj.class_code "
+        "ORDER BY ood.organization_code, wdj.class_code "
         f"FETCH FIRST {ROW_CAP} ROWS ONLY"
     )
     return sql, binds

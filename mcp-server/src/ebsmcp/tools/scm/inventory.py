@@ -7,8 +7,8 @@ Every query therefore joins APPS.ORG_ORGANIZATION_DEFINITIONS and filters on
 its OPERATING_UNIT, so an inventory org is visible only if its operating unit
 is one the caller is entitled to.
 
-Confidence: written from the documented R12 data model and NOT yet run
-against a live instance (unit-tested query construction only). Column and
+Confidence: written from the documented R12 data model and then executed against a live R12.2 instance on 2026-10-15: every query ran
+without error, and row semantics were checked only where noted below. Column and
 code-value assumptions — notably MTL_TRANSACTIONS_INTERFACE.PROCESS_FLAG = 3
 meaning error, and single-segment item numbers in SEGMENT1 — need checking
 on first live access. Item numbers are matched exactly/by prefix with the

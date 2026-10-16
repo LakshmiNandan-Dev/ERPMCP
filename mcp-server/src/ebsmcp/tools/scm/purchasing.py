@@ -4,8 +4,8 @@ on approval.
 Scoping: PO_HEADERS_ALL / PO_REQUISITION_HEADERS_ALL carry the operating-unit
 ORG_ID directly, so the entitlement scope is applied as `org_id IN (...)`.
 
-Confidence: written from the documented R12 data model and NOT yet run
-against a live instance (unit-tested query construction only). Assumptions
+Confidence: written from the documented R12 data model and then executed against a live R12.2 instance on 2026-10-15: every query ran
+without error, and row semantics were checked only where noted below. Assumptions
 to verify on first live access: APPS.AP_SUPPLIERS as the supplier table
 (R12; PO_VENDORS is the 11i name), APPS.HR_EMPLOYEES for the preparer name,
 the AUTHORIZATION_STATUS code values below, PO_HEADERS_INTERFACE.PROCESS_CODE =

@@ -10,8 +10,8 @@ effectivity, implemented-only) in the JOIN ... ON clause, not WHERE: Oracle
 applies WHERE after the hierarchy is built, so a WHERE filter would prune a
 disabled component's row but still return its whole subtree.
 
-Confidence: written from the documented R12 data model and NOT yet run
-against a live instance (unit-tested query construction only). Assumptions
+Confidence: written from the documented R12 data model and then executed against a live R12.2 instance on 2026-10-15: every query ran
+without error, and row semantics were checked only where noted below. Assumptions
 to verify: BOM_COMPONENTS_B.IMPLEMENTATION_DATE IS NULL marks a component
 pending an ECO; a NULL ALTERNATE_BOM_DESIGNATOR is the primary bill;
 BOM_BILL_OF_MATERIALS item type 1 = standard; ENG_ENGINEERING_CHANGES
@@ -59,18 +59,26 @@ def build_bom_explosion_query(
     include_inactive: bool,
 ) -> tuple[str, dict[str, Any]]:
     """Pure function, unit-tested directly. Multi-level primary bill,
-    depth-first, with effectivity dates."""
+    depth-first, with effectivity dates.
+
+    Ordering is done in an outer query by a SYS_CONNECT_BY_PATH key rather
+    than ORDER SIBLINGS BY: verified on a live instance (2026-10-15) that
+    ORDER SIBLINGS BY is rejected with ORA-30929 as soon as the same query
+    carries the COUNT(*) OVER () total this catalog requires. A path of
+    zero-padded item_num then component number sorts parents before children
+    and siblings by item_num, which is the same depth-first order."""
     where, binds = inventory_org_filter(org_ids, organization_code)
     binds["item_number"] = item_number
     binds["max_levels"] = _levels(max_levels)
     effectivity = _ANY_EFFECTIVITY if include_inactive else _EFFECTIVE
 
-    sql = (
+    inner = (
         "SELECT LEVEL AS bom_level, asm.segment1 AS assembly, comp.segment1 AS component, "
         "comp.description AS component_description, bcb.item_num, "
         "bcb.component_quantity, bcb.operation_seq_num, "
         "bcb.effectivity_date, bcb.disable_date, "
-        "COUNT(*) OVER () AS total_count "
+        "SYS_CONNECT_BY_PATH(TO_CHAR(NVL(bcb.item_num, 0), 'FM0000000') "
+        "|| ':' || comp.segment1, '>') AS sort_path "
         "FROM APPS.BOM_STRUCTURES_B bsb "
         "JOIN APPS.ORG_ORGANIZATION_DEFINITIONS ood "
         + _ORG_JOIN_ON.format(where=" AND ".join(where))
@@ -82,8 +90,14 @@ def build_bom_explosion_query(
         "AND comp.organization_id = bsb.organization_id "
         "START WITH asm.segment1 = :item_number "
         "CONNECT BY NOCYCLE PRIOR bcb.component_item_id = bsb.assembly_item_id "
-        "AND LEVEL <= :max_levels "
-        "ORDER SIBLINGS BY bcb.item_num "
+        "AND LEVEL <= :max_levels"
+    )
+    sql = (
+        "SELECT t.bom_level, t.assembly, t.component, t.component_description, "
+        "t.item_num, t.component_quantity, t.operation_seq_num, "
+        "t.effectivity_date, t.disable_date, COUNT(*) OVER () AS total_count "
+        f"FROM ({inner}) t "
+        "ORDER BY t.sort_path "
         f"FETCH FIRST {ROW_CAP * 4} ROWS ONLY"
     )
     return sql, binds
@@ -97,17 +111,19 @@ def build_where_used_query(
     include_inactive: bool,
 ) -> tuple[str, dict[str, Any]]:
     """Pure function, unit-tested directly. Assemblies using a component,
-    walking upward through parent assemblies."""
+    walking upward through parent assemblies. Ordered by connect-by path in
+    an outer query — see build_bom_explosion_query for why not ORDER
+    SIBLINGS BY."""
     where, binds = inventory_org_filter(org_ids, organization_code)
     binds["component_number"] = component_number
     binds["max_levels"] = _levels(max_levels)
     effectivity = _ANY_EFFECTIVITY if include_inactive else _EFFECTIVE
 
-    sql = (
+    inner = (
         "SELECT LEVEL AS where_used_level, asm.segment1 AS assembly, "
         "asm.description AS assembly_description, comp.segment1 AS component, "
         "bcb.component_quantity, bcb.effectivity_date, bcb.disable_date, "
-        "COUNT(*) OVER () AS total_count "
+        "SYS_CONNECT_BY_PATH(asm.segment1, '>') AS sort_path "
         "FROM APPS.BOM_STRUCTURES_B bsb "
         "JOIN APPS.ORG_ORGANIZATION_DEFINITIONS ood "
         + _ORG_JOIN_ON.format(where=" AND ".join(where))
@@ -119,8 +135,14 @@ def build_where_used_query(
         "AND comp.organization_id = bsb.organization_id "
         "START WITH comp.segment1 = :component_number "
         "CONNECT BY NOCYCLE PRIOR bsb.assembly_item_id = bcb.component_item_id "
-        "AND LEVEL <= :max_levels "
-        "ORDER SIBLINGS BY asm.segment1 "
+        "AND LEVEL <= :max_levels"
+    )
+    sql = (
+        "SELECT t.where_used_level, t.assembly, t.assembly_description, t.component, "
+        "t.component_quantity, t.effectivity_date, t.disable_date, "
+        "COUNT(*) OVER () AS total_count "
+        f"FROM ({inner}) t "
+        "ORDER BY t.sort_path "
         f"FETCH FIRST {ROW_CAP} ROWS ONLY"
     )
     return sql, binds

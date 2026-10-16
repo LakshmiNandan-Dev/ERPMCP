@@ -10,8 +10,8 @@ are counted from that period's start date onward; the interface and
 pending-transaction counts are totals, since any row there blocks a close
 regardless of date.
 
-Confidence: written from the documented R12 data model and NOT yet run
-against a live instance (unit-tested query construction only). Assumptions
+Confidence: written from the documented R12 data model and then executed against a live R12.2 instance on 2026-10-15: every query ran
+without error, and row semantics were checked only where noted below. Assumptions
 to verify: ORG_ACCT_PERIODS.OPEN_FLAG 'Y' = open (a period in 'P' pending
 close is not treated as open); MTL_MATERIAL_TRANSACTIONS_TEMP holds
 unprocessed material transactions; RCV_TRANSACTIONS_INTERFACE rows not yet

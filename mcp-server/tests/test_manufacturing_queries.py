@@ -443,3 +443,62 @@ async def test_diagnose_job_composes_all_checks():
     # six queries: header, progress, shortages, move, resource, uncosted
     assert len(conn.calls) == 6
     assert conn.calls[-1][1] == {"wip_entity_id": 77, "organization_id": 301}
+
+
+# ── regressions found by running against a live R12.2 instance (2026-10-15) ──
+
+
+def test_hierarchical_queries_never_combine_order_siblings_with_a_window():
+    """ORA-30929: ORDER SIBLINGS BY is rejected whenever the same query
+    carries COUNT(*) OVER (). Ordering is by connect-by path in an outer
+    query instead."""
+    for name in ("bom_explosion", "where_used", "lot_forward", "lot_backward"):
+        sql, _ = SCOPED_QUERIES[name]
+        assert "ORDER SIBLINGS BY" not in sql, name
+        assert "SYS_CONNECT_BY_PATH" in sql, name
+        assert "ORDER BY t.sort_path" in sql or "ORDER BY MIN(t.hops)" in sql, name
+
+
+def test_genealogy_traverses_without_joining_lots_inside_the_hierarchy():
+    """Lots are consumed into jobs, which produce the next lots. A join to
+    MTL_LOT_NUMBERS inside the hierarchy drops the job nodes and cuts every
+    trace at its first hop."""
+    for name in ("lot_forward", "lot_backward"):
+        sql, _ = SCOPED_QUERIES[name]
+        inner = sql.split(" START WITH ")[0]
+        assert "MTL_LOT_NUMBERS" not in inner.split("FROM (")[1], name
+        assert "GROUP BY mln.lot_number" in sql, name  # one row per lot
+
+
+def test_job_progress_uses_the_real_schedule_columns():
+    sql, _ = SCOPED_QUERIES["progress"]
+    assert "wo.scheduled_completion_date" not in sql
+    assert "wo.first_unit_start_date" in sql and "wo.last_unit_completion_date" in sql
+
+
+def test_period_balance_sql_uses_only_columns_the_table_has():
+    from ebsmcp.tools.manufacturing.costing import _WPB_COLUMNS
+
+    for name in ("job_variance", "wip_value"):
+        sql, _ = SCOPED_QUERIES[name]
+        import re
+
+        used = set(re.findall(r"wpb\.([a-z_]+)", sql))
+        used -= {"wip_entity_id", "organization_id"}
+        assert used <= _WPB_COLUMNS, used - _WPB_COLUMNS
+    # the columns the symmetric guess invented
+    for missing in ("tl_material_in", "tl_material_overhead_in"):
+        assert missing not in _WPB_COLUMNS
+
+
+def test_wip_value_groups_by_the_jobs_class_code_not_the_balance_row():
+    sql, _ = SCOPED_QUERIES["wip_value"]
+    assert "wpb.class_code" not in sql
+    assert "wdj.class_code" in sql
+
+
+def test_job_variance_balance_has_no_float_noise():
+    row = {f"{e}_{f}": 0 for e in WPB_ELEMENTS for f in ("in", "out", "var")}
+    row.update(resource_in=0.1 + 0.2, resource_out=0.3)  # 0.30000000000000004
+    out = summarize_job_variance([row])
+    assert out["totals"]["unrelieved_balance"] == 0

@@ -8,8 +8,8 @@ instance to introspect. Add them once one is available.
 Scoping: work orders carry the inventory ORGANIZATION_ID, scoped through
 APPS.ORG_ORGANIZATION_DEFINITIONS.OPERATING_UNIT.
 
-Confidence: written from the documented R12 data model and NOT yet run
-against a live instance (unit-tested query construction only). Assumptions
+Confidence: written from the documented R12 data model and then executed against a live R12.2 instance on 2026-10-15: every query ran
+without error, and row semantics were checked only where noted below. Assumptions
 to verify: EAM work orders are WIP_ENTITIES.ENTITY_TYPE = 6 with their asset
 in WIP_DISCRETE_JOBS.MAINTENANCE_OBJECT_ID (MAINTENANCE_OBJECT_TYPE 3 =
 CSI_ITEM_INSTANCES.INSTANCE_ID); open means STATUS_TYPE 1, 3 or 6

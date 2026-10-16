@@ -142,14 +142,21 @@ further, never to widen it. Inventory-organization tables are scoped through
 | `mfg_period_close` | 1 | `inventory_period_close_check` — blockers and a ready-to-close verdict per organization |
 | `mfg_diagnose_job` | 1 | `diagnose_job` — one call that explains why a discrete job is stuck |
 
-> **Status of the functional toolsets:** the SCM and manufacturing SQL was
-> written from the documented R12 data model and unit-tested for query
-> construction, scoping and binds, but has **not yet been run against a live
-> instance**. Each module's docstring lists the column and code-value
-> assumptions to verify first. Not yet built, because they need a live
-> instance to write reviewed SQL: `quality_results`,
-> `nonconformance_summary`, `pm_schedule_due`, `asset_failure_history`,
-> `resource_capacity_load`.
+> **Status of the functional toolsets:** the SCM and manufacturing queries were
+> written from the documented R12 data model, unit-tested for construction,
+> scoping and binds, and then **executed against a live R12.2 instance on
+> 2026-10-15** — all 37 query shapes run without error. That run found and
+> fixed real defects (wrong `WIP_PERIOD_BALANCES` columns, a lot-genealogy
+> trace that stopped at the first hop because lots pass through jobs, and
+> `ORDER SIBLINGS BY` being incompatible with the window total). Execution is
+> not the same as correctness: row semantics were spot-checked for job
+> variance, shortages, period close, lot genealogy and `diagnose_job`, and the
+> status and code-value assumptions listed in each module's docstring are
+> still unverified. `uncosted_transactions`, `order_import_errors` and the
+> sales-order filtered lookup returned no rows on that instance, so they have
+> not been exercised with data. Not yet built, because they need a live
+> instance to write reviewed SQL: `quality_results`, `nonconformance_summary`,
+> `pm_schedule_due`, `asset_failure_history`, `resource_capacity_load`.
 
 Start with **`list_ebs_instances`** — it reports which instances the calling
 identity may actually reach, which is what every other tool's optional
