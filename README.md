@@ -35,7 +35,7 @@ administrator, not a config file, decides who can see what.
 
 | Service | Stack | Port | Role |
 |---|---|---|---|
-| [mcp-server/](mcp-server/) | Python, MCP SDK | 8080 | The MCP endpoint. 96 read-only EBS tools across 25 toolsets, plus `list_ebs_instances`. |
+| [mcp-server/](mcp-server/) | Python, MCP SDK | 8080 | The MCP endpoint. 97 read-only EBS tools across 26 toolsets, plus `list_ebs_instances`. |
 | [management-api/](management-api/) | FastAPI | 8010 | Admin API — onboarding, Entra config, audit queries. |
 | [admin-gui/](admin-gui/) | React + Vite | 5174 | Admin console for the above. |
 | [identity-service/](identity-service/) | SQLAlchemy + Alembic | — | Schema/migrations for the identity-mapping store. |
@@ -90,17 +90,17 @@ what makes the rest safe:
 
 > **An LLM-constructed tool call is not a trusted source of authorization.**
 > Only the resolved identity is. This is enforced in one place —
-> [policy/entitlement.py](mcp-server/src/ebsmcp/policy/entitlement.py) — rather than trusted to 96 individual
+> [policy/entitlement.py](mcp-server/src/ebsmcp/policy/entitlement.py) — rather than trusted to 97 individual
 > tools.
 
 ---
 
 ## Tool catalog
 
-96 tools, all read-only (`read_only_hint=True`, `destructive_hint=False`),
-grouped into 25 mountable toolsets, plus `list_ebs_instances`.
+97 tools, all read-only (`read_only_hint=True`, `destructive_hint=False`),
+grouped into 26 mountable toolsets, plus `list_ebs_instances`.
 
-Toolsets exist for a specific reason: 96 tools presented as one flat list is a
+Toolsets exist for a specific reason: 97 tools presented as one flat list is a
 selection-accuracy problem for the model, not a cosmetic one. A deployment
 mounts only the toolsets it needs.
 
@@ -134,6 +134,7 @@ further, never to widen it. Inventory-organization tables are scoped through
 | `scm_order_management` | 3 | `sales_order_status`, `orders_on_hold`, `order_import_errors` |
 | `scm_receiving` | 1 | `receiving_interface_errors` |
 | `scm_shipping` | 2 | `open_deliveries`, `backordered_lines` |
+| `scm_diagnose_order` | 1 | `diagnose_order` — one call that explains why a sales order is late (holds, scheduling, workflow errors, shipping status, stock) |
 | `mfg_wip` | 4 | `wip_job_status`, `wip_pending_transactions`, `job_material_shortages`, `job_progress` |
 | `mfg_engineering` | 5 | `bom_explosion`, `where_used`, `routing_detail`, `pending_ecos`, `bom_integrity_check` |
 | `mfg_quality` | 1 | `lot_genealogy` (forward/backward recall trace) |
@@ -155,7 +156,8 @@ further, never to widen it. Inventory-organization tables are scoped through
 > still unverified. `uncosted_transactions`, `order_import_errors` and the
 > sales-order filtered lookup returned no rows on that instance, so they have
 > not been exercised with data. Not yet built, because they need a live
-> instance to write reviewed SQL: `quality_results`, `nonconformance_summary`,
+> instance to write reviewed SQL (`diagnose_order` is newer still and has not
+> been run against a live instance at all): `quality_results`, `nonconformance_summary`,
 > `pm_schedule_due`, `asset_failure_history`, `resource_capacity_load`.
 
 Start with **`list_ebs_instances`** — it reports which instances the calling

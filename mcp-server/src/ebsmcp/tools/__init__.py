@@ -32,6 +32,7 @@ from .manufacturing import (
     WIP_TOOLSET,
 )
 from .scm import (
+    DIAGNOSE_ORDER_TOOLSET,
     INVENTORY_TOOLSET,
     ORDER_MANAGEMENT_TOOLSET,
     PURCHASING_TOOLSET,
@@ -40,6 +41,7 @@ from .scm import (
 )
 
 __all__ = [
+    "DIAGNOSE_ORDER_TOOLSET",
     "COSTING_TOOLSET",
     "DIAGNOSE_JOB_TOOLSET",
     "EAM_TOOLSET",

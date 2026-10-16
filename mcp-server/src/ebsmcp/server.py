@@ -30,6 +30,7 @@ from ebsmcp.connectors.base import EBSConnector
 from ebsmcp.identity import IdentityResolver, PostgresIdentityResolver, ResolvedIdentity, StubIdentityResolver
 from ebsmcp.policy import EntitlementFilter
 from ebsmcp.tools import (
+    DIAGNOSE_ORDER_TOOLSET,
     COSTING_TOOLSET,
     DIAGNOSE_JOB_TOOLSET,
     EAM_TOOLSET,
@@ -700,6 +701,7 @@ def build_app(settings: Settings) -> MCPServer:
             ORDER_MANAGEMENT_TOOLSET,
             RECEIVING_TOOLSET,
             SHIPPING_TOOLSET,
+            DIAGNOSE_ORDER_TOOLSET,
             COSTING_TOOLSET,
             DIAGNOSE_JOB_TOOLSET,
             EAM_TOOLSET,
