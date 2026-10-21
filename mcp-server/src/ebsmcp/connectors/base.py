@@ -41,6 +41,11 @@ _QUALIFICATION_EXEMPT = {"DUAL"}
 # performance view without having to enumerate them.
 _BARE_NAME_EXEMPT_PREFIXES = ("GV$", "DBA_")
 
+# ALL_* views are the "what this account can see" counterpart of DBA_* and
+# resolve the same way, but an ALL_ prefix check would also exempt a product
+# object that merely starts with ALL_, so they are named exactly.
+_BARE_NAME_EXEMPT_NAMES = frozenset({"ALL_OBJECTS"})
+
 _BARE_V_DOLLAR = re.compile(r"(?<![A-Za-z])V\$", re.IGNORECASE)
 _IDENTIFIER = r"[A-Za-z_][A-Za-z0-9_$#]*"
 _FROM_JOIN_TARGET = re.compile(
@@ -72,6 +77,8 @@ def validate_sql_conventions(sql: str) -> None:
         if target_upper in _QUALIFICATION_EXEMPT:
             continue
         if target_upper.startswith(_BARE_NAME_EXEMPT_PREFIXES):
+            continue
+        if target_upper in _BARE_NAME_EXEMPT_NAMES:
             continue
         if "." not in target:
             violations.append(
