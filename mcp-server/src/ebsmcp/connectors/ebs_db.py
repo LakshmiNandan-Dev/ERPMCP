@@ -54,6 +54,20 @@ def init_thick_mode_if_configured(enabled: bool) -> None:
     _thick_mode_initialized = True
 
 
+def _lobs_as_text(cursor, metadata):
+    """Fetch CLOB/NCLOB columns as str (and BLOB as bytes) rather than LOB
+    locators, which cannot outlive the connection or be serialised. Needed by
+    DBMS_METADATA.GET_DDL; harmless for every other query, none of which
+    returns a LOB."""
+    import oracledb
+
+    if metadata.type_code is oracledb.DB_TYPE_CLOB:
+        return cursor.var(oracledb.DB_TYPE_LONG, arraysize=cursor.arraysize)
+    if metadata.type_code is oracledb.DB_TYPE_NCLOB:
+        return cursor.var(oracledb.DB_TYPE_LONG_NVARCHAR, arraysize=cursor.arraysize)
+    return None
+
+
 class OracleEBSConnector(EBSConnector):
     def __init__(self, dsn: str, user: str, password: str) -> None:
         self._dsn = dsn
@@ -65,6 +79,7 @@ class OracleEBSConnector(EBSConnector):
 
         with oracledb.connect(user=self._user, password=self._password, dsn=self._dsn) as conn:
             with conn.cursor() as cursor:
+                cursor.outputtypehandler = _lobs_as_text
                 cursor.execute(sql, binds or {})
                 columns = [col[0].lower() for col in cursor.description]
                 return [dict(zip(columns, row)) for row in cursor.fetchall()]

@@ -15,6 +15,7 @@ from .index_health import INDEX_HEALTH_TOOLSET
 from .instance_health import INSTANCE_HEALTH_TOOLSET
 from .memory import MEMORY_TOOLSET
 from .notification_diagnosis import NOTIFICATION_DIAGNOSIS_TOOLSET
+from .object_ddl import OBJECT_DDL_TOOLSET
 from .output_printing import OUTPUT_PRINTING_TOOLSET
 from .patch_version_tracking import PATCH_VERSION_TRACKING_TOOLSET
 from .redo_archive_backup import REDO_ARCHIVE_BACKUP_TOOLSET
@@ -29,6 +30,7 @@ __all__ = [
     "INSTANCE_HEALTH_TOOLSET",
     "MEMORY_TOOLSET",
     "NOTIFICATION_DIAGNOSIS_TOOLSET",
+    "OBJECT_DDL_TOOLSET",
     "OUTPUT_PRINTING_TOOLSET",
     "PATCH_VERSION_TRACKING_TOOLSET",
     "REDO_ARCHIVE_BACKUP_TOOLSET",

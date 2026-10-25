@@ -30,6 +30,8 @@ from ebsmcp.connectors.base import EBSConnector
 from ebsmcp.identity import IdentityResolver, PostgresIdentityResolver, ResolvedIdentity, StubIdentityResolver
 from ebsmcp.policy import EntitlementFilter
 from ebsmcp.tools import (
+    ACCOUNTS_PAYABLE_TOOLSET,
+    ACCOUNTS_RECEIVABLE_TOOLSET,
     DIAGNOSE_ORDER_TOOLSET,
     COSTING_TOOLSET,
     DIAGNOSE_JOB_TOOLSET,
@@ -47,6 +49,7 @@ from ebsmcp.tools import (
     INVENTORY_TOOLSET,
     MEMORY_TOOLSET,
     NOTIFICATION_DIAGNOSIS_TOOLSET,
+    OBJECT_DDL_TOOLSET,
     ORDER_MANAGEMENT_TOOLSET,
     OUTPUT_PRINTING_TOOLSET,
     PATCH_VERSION_TRACKING_TOOLSET,
@@ -689,6 +692,7 @@ def build_app(settings: Settings) -> MCPServer:
             DIAGNOSE_REQUEST_TOOLSET,
             WORKFLOW_TOOLSET,
             NOTIFICATION_DIAGNOSIS_TOOLSET,
+            OBJECT_DDL_TOOLSET,
             OUTPUT_PRINTING_TOOLSET,
             SECURITY_CONFIGURATION_TOOLSET,
             MEMORY_TOOLSET,
@@ -709,6 +713,8 @@ def build_app(settings: Settings) -> MCPServer:
             PERIOD_CLOSE_TOOLSET,
             QUALITY_TOOLSET,
             WIP_TOOLSET,
+            ACCOUNTS_PAYABLE_TOOLSET,
+            ACCOUNTS_RECEIVABLE_TOOLSET,
         ],
     )
     return app

@@ -1,4 +1,4 @@
-"""Finance toolset family — no toolsets registered yet.
+"""Finance toolset family — accounts payable and accounts receivable.
 
 This is where GL/AP/AR interface monitoring belongs, not tools/dba/:
 those tables (GL_INTERFACE, AP_INVOICES_INTERFACE, RA_INTERFACE_LINES_ALL)
@@ -28,4 +28,7 @@ implemented yet — until it is, finance tools are scoped by operating unit
 only, which is wider than a Ledger-restricted EBS user's own view.
 """
 
-__all__: list[str] = []
+from .accounts_payable import ACCOUNTS_PAYABLE_TOOLSET
+from .accounts_receivable import ACCOUNTS_RECEIVABLE_TOOLSET
+
+__all__ = ["ACCOUNTS_PAYABLE_TOOLSET", "ACCOUNTS_RECEIVABLE_TOOLSET"]
