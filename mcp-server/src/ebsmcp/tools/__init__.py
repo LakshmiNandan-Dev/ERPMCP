@@ -23,7 +23,11 @@ from .registry import (
     resolve_identity_only,
     resolve_scoped_call,
 )
-from .finance import ACCOUNTS_PAYABLE_TOOLSET, ACCOUNTS_RECEIVABLE_TOOLSET
+from .finance import (
+    ACCOUNTS_PAYABLE_TOOLSET,
+    ACCOUNTS_RECEIVABLE_TOOLSET,
+    DIAGNOSE_INVOICE_TOOLSET,
+)
 from .manufacturing import (
     COSTING_TOOLSET,
     DIAGNOSE_JOB_TOOLSET,
@@ -45,6 +49,7 @@ from .scm import (
 __all__ = [
     "ACCOUNTS_PAYABLE_TOOLSET",
     "ACCOUNTS_RECEIVABLE_TOOLSET",
+    "DIAGNOSE_INVOICE_TOOLSET",
     "DIAGNOSE_ORDER_TOOLSET",
     "COSTING_TOOLSET",
     "DIAGNOSE_JOB_TOOLSET",

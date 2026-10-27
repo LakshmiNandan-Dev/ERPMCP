@@ -32,6 +32,7 @@ from ebsmcp.policy import EntitlementFilter
 from ebsmcp.tools import (
     ACCOUNTS_PAYABLE_TOOLSET,
     ACCOUNTS_RECEIVABLE_TOOLSET,
+    DIAGNOSE_INVOICE_TOOLSET,
     DIAGNOSE_ORDER_TOOLSET,
     COSTING_TOOLSET,
     DIAGNOSE_JOB_TOOLSET,
@@ -715,6 +716,7 @@ def build_app(settings: Settings) -> MCPServer:
             WIP_TOOLSET,
             ACCOUNTS_PAYABLE_TOOLSET,
             ACCOUNTS_RECEIVABLE_TOOLSET,
+            DIAGNOSE_INVOICE_TOOLSET,
         ],
     )
     return app

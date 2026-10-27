@@ -30,5 +30,10 @@ only, which is wider than a Ledger-restricted EBS user's own view.
 
 from .accounts_payable import ACCOUNTS_PAYABLE_TOOLSET
 from .accounts_receivable import ACCOUNTS_RECEIVABLE_TOOLSET
+from .diagnose_invoice import DIAGNOSE_INVOICE_TOOLSET
 
-__all__ = ["ACCOUNTS_PAYABLE_TOOLSET", "ACCOUNTS_RECEIVABLE_TOOLSET"]
+__all__ = [
+    "ACCOUNTS_PAYABLE_TOOLSET",
+    "ACCOUNTS_RECEIVABLE_TOOLSET",
+    "DIAGNOSE_INVOICE_TOOLSET",
+]
