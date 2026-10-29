@@ -226,23 +226,39 @@ def build_payment_history_query(
 def build_interface_rejections_query(
     org_ids: tuple[str, ...],
 ) -> tuple[str, dict[str, Any]]:
-    """Pure function, unit-tested directly. Header-level rejections from the
-    Payables Open Interface Import: one row per invoice per reject reason,
-    newest first."""
+    """Pure function, unit-tested directly. Rejections from the Payables Open
+    Interface Import, newest first, one row per invoice per reject reason, at
+    header level and at line level (on the live instance about half of all
+    rejections are on the lines, e.g. ACCT DATE NOT IN OPEN PD). The two are
+    UNIONed inside a subquery so total_count counts both."""
     scope, binds = org_in_clause("aii.org_id", org_ids)
-    sql = (
+    cols = (
         "SELECT aii.invoice_id AS interface_invoice_id, aii.invoice_num AS invoice_number, "
-        "aii.vendor_name AS supplier_name, "
-        "aii.invoice_amount, aii.invoice_currency_code AS currency, aii.source, "
+        "aii.vendor_name AS supplier_name, aii.invoice_amount, "
+        "aii.invoice_currency_code AS currency, aii.source, "
         "air.reject_lookup_code AS reject_code, alc.description AS reject_reason, "
-        "aii.creation_date, aii.org_id, COUNT(*) OVER () AS total_count "
-        "FROM APPS.AP_INVOICES_INTERFACE aii "
-        "JOIN APPS.AP_INTERFACE_REJECTIONS air ON air.parent_id = aii.invoice_id "
-        "AND air.parent_table = 'AP_INVOICES_INTERFACE' "
+    )
+    tail = (
         "LEFT JOIN APPS.AP_LOOKUP_CODES alc ON alc.lookup_type = 'REJECT CODE' "
         "AND alc.lookup_code = air.reject_lookup_code "
         f"WHERE {scope} AND aii.status = 'REJECTED' "
-        "ORDER BY aii.creation_date DESC, aii.invoice_id DESC "
+    )
+    sql = (
+        "SELECT u.*, COUNT(*) OVER () AS total_count FROM ("
+        + cols + "'HEADER' AS reject_level, aii.creation_date, aii.org_id "
+        "FROM APPS.AP_INVOICES_INTERFACE aii "
+        "JOIN APPS.AP_INTERFACE_REJECTIONS air ON air.parent_id = aii.invoice_id "
+        "AND air.parent_table = 'AP_INVOICES_INTERFACE' "
+        + tail
+        + "UNION ALL "
+        + cols + "'LINE' AS reject_level, aii.creation_date, aii.org_id "
+        "FROM APPS.AP_INVOICES_INTERFACE aii "
+        "JOIN APPS.AP_INVOICE_LINES_INTERFACE ail ON ail.invoice_id = aii.invoice_id "
+        "JOIN APPS.AP_INTERFACE_REJECTIONS air ON air.parent_id = ail.invoice_line_id "
+        "AND air.parent_table = 'AP_INVOICE_LINES_INTERFACE' "
+        + tail
+        + ") u "
+        "ORDER BY u.creation_date DESC, u.interface_invoice_id DESC "
         f"FETCH FIRST {ROW_CAP} ROWS ONLY"
     )
     return sql, binds
@@ -380,9 +396,11 @@ def _register(app: MCPServer, ctx: ToolContext) -> None:
     ) -> dict:
         """List invoices rejected by the Payables Open Interface Import
         (AP_INVOICES_INTERFACE, status REJECTED), newest first, one row per
-        reject reason with its code and description. Header-level rejections
-        only; line-level rejections are not included. Use when a batch of
-        invoices did not make it into Payables. Capped at 50 rows with
+        reject reason with its code and description, and reject_level saying
+        whether the reason is on the invoice HEADER or on one of its LINE rows
+        (an invoice rejected for two lines with the same reason appears twice).
+        To see why one specific invoice is stuck, use diagnose_invoice. Use
+        this when a batch of invoices did not make it into Payables. Capped at 50 rows with
         total_count. Call list_ebs_instances first if unsure which EBS
         instance names this deployment has.
         """

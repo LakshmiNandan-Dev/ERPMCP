@@ -28,20 +28,21 @@ through resolve_sensitive_call(domain="finance"). No bank-account or
 tax-registration column is read; payment eligibility looks at hold flags and
 dates only.
 
-Confidence: stages 1-3 use columns exercised against the live R12.2 instance on
-2026-10-20 (AP_INVOICES_ALL, AP_INVOICE_DISTRIBUTIONS_ALL, AP_HOLDS_ALL,
-AP_INVOICES_INTERFACE / AP_INTERFACE_REJECTIONS). Stages 4-7 were written from
-the documented R12 data model and unit-tested, but NOT yet run against a live
-instance (the database was unreachable when they were written). Assumptions to
-verify first, in the order they are likely to fail with ORA-00904/00942:
-AP_INVOICE_LINES_ALL.WFAPPROVAL_STATUS values; AP_SUPPLIERS.HOLD_ALL_PAYMENTS_FLAG
-and AP_SUPPLIER_SITES_ALL.HOLD_ALL_PAYMENTS_FLAG / INACTIVE_DATE;
-AP_PAYMENT_SCHEDULES_ALL.HOLD_FLAG / CHECKRUN_ID / PAYMENT_METHOD_CODE;
-AP_INV_SELECTION_CRITERIA_ALL.CHECKRUN_NAME / STATUS; the XLA_* join
-(application 200, entity AP_INVOICES, source_id_int_1 = invoice_id) and its
-status codes; GL_PERIOD_STATUSES for application 200 on the invoice's ledger.
-An empty findings list means none of the checks that ran fired; read `stages`
-for which ones did not run.
+Confidence: run end to end against the live R12.2 instance (DEV) on 2026-10-28
+on six invoices (not validated, on hold, paid, ready, partially paid, long-held):
+every stage query executed with no error, and the verdicts matched the data. All
+the columns used exist (checked with SELECT ... WHERE 1 = 0). Verified values:
+WFAPPROVAL_STATUS is NOT REQUIRED on 299,999 of 300,000 lines and INITIATED on
+one; AP_INV_SELECTION_CRITERIA_ALL.STATUS is SELECTED / UNSTARTED / FORMATTED /
+QUICKCHECK / CONFIRMED / CANCELED / CANCELING / CANCELLED NO PAYMENTS; payment
+periods are P / O / N / C. NOT verified: any invoice with a supplier or site
+payment hold, a schedule hold, a batch attachment, or an accounting event --
+none of the sampled invoices had one -- and the Subledger Accounting join
+returned no rows at all on DEV (zero AP_INVOICES entities in 145,519 invoices),
+so the accounting stage's error / draft / not-transferred branches are tested
+only against synthetic rows. With no events the tool reports
+no_accounting_events rather than calling accounting clear. An empty findings
+list means none of the checks that ran fired; read `stages` for any that did not.
 """
 
 from __future__ import annotations
@@ -96,6 +97,16 @@ _NOT_VALIDATED_FLAGS = {
 }
 _PERIOD_NOT_OPEN = {"C": "closed", "N": "never opened", "P": "permanently closed"}
 
+# AP_INV_SELECTION_CRITERIA_ALL.STATUS values seen on the live instance.
+_BATCH_CANCELLED = {"CANCELED", "CANCELING", "CANCELLED", "CANCELLED NO PAYMENTS"}
+_BATCH_STATUS = {
+    "SELECTED": "selected but not yet built or confirmed",
+    "UNSTARTED": "not started",
+    "FORMATTED": "formatted but not confirmed",
+    "QUICKCHECK": "a quick payment that was not confirmed",
+    "CONFIRMED": "confirmed, yet the invoice still shows an unpaid balance",
+}
+
 _MAX_LISTED = 10
 
 
@@ -130,20 +141,35 @@ def build_invoice_header_query(
 def build_interface_query(
     org_ids: tuple[str, ...], invoice_number: str
 ) -> tuple[str, dict[str, Any]]:
-    """Open-interface rows for this invoice number, with any reject reasons."""
+    """Open-interface rows for this invoice number with every reject reason,
+    header-level and line-level (about half of all rejections on the live
+    instance are on the lines, e.g. ACCT DATE NOT IN OPEN PD)."""
     scope, binds = org_in_clause("aii.org_id", org_ids)
     binds["invoice_number"] = invoice_number
-    sql = (
+    cols = (
         "SELECT aii.invoice_id AS interface_invoice_id, aii.status, aii.source, "
         "aii.creation_date, air.reject_lookup_code AS reject_code, "
-        "alc.description AS reject_reason "
+        "alc.description AS reject_reason, "
+    )
+    lookup = (
+        "LEFT JOIN APPS.AP_LOOKUP_CODES alc ON alc.lookup_type = 'REJECT CODE' "
+        "AND alc.lookup_code = air.reject_lookup_code "
+    )
+    where = f"WHERE {scope} AND aii.invoice_num = :invoice_number "
+    sql = (
+        cols + "'HEADER' AS reject_level "
         "FROM APPS.AP_INVOICES_INTERFACE aii "
         "LEFT JOIN APPS.AP_INTERFACE_REJECTIONS air ON air.parent_id = aii.invoice_id "
         "AND air.parent_table = 'AP_INVOICES_INTERFACE' "
-        "LEFT JOIN APPS.AP_LOOKUP_CODES alc ON alc.lookup_type = 'REJECT CODE' "
-        "AND alc.lookup_code = air.reject_lookup_code "
-        f"WHERE {scope} AND aii.invoice_num = :invoice_number "
-        "ORDER BY aii.creation_date DESC, aii.invoice_id DESC "
+        + lookup + where
+        + "UNION ALL "
+        + cols + "'LINE' AS reject_level "
+        "FROM APPS.AP_INVOICES_INTERFACE aii "
+        "JOIN APPS.AP_INVOICE_LINES_INTERFACE ail ON ail.invoice_id = aii.invoice_id "
+        "JOIN APPS.AP_INTERFACE_REJECTIONS air ON air.parent_id = ail.invoice_line_id "
+        "AND air.parent_table = 'AP_INVOICE_LINES_INTERFACE' "
+        + lookup + where
+        + "ORDER BY 4 DESC, 1 DESC "
         f"FETCH FIRST {ROW_CAP} ROWS ONLY"
     )
     return sql, binds
@@ -306,8 +332,11 @@ def diagnose_invoice_findings(
         rows = interface or []
         rejected = [r for r in rows if (r.get("status") or "").upper() == "REJECTED"]
         if rejected:
-            reasons = sorted({r.get("reject_reason") or r.get("reject_code") or "unknown"
-                              for r in rejected})
+            reasons = sorted({
+                (r.get("reject_reason") or r.get("reject_code") or "reason not recorded")
+                + (" (on the invoice lines)" if r.get("reject_level") == "LINE" else "")
+                for r in rejected if r.get("reject_code") or r.get("reject_reason")
+            }) or ["reason not recorded"]
             add("import", "import_rejected", "blocking",
                 "Open Interface Import rejected this invoice, so it was never created: "
                 + "; ".join(reasons) + ".", owner="Whoever submitted the invoice",
@@ -408,16 +437,43 @@ def diagnose_invoice_findings(
         names = {b.get("checkrun_id"): b for b in (batches or [])}
         for s in open_schedules:
             cid = s.get("checkrun_id")
-            if cid is not None:
-                b = names.get(cid, {})
+            if cid is None:
+                continue
+            b = names.get(cid, {})
+            label = b.get("checkrun_name") or cid
+            status = str(b.get("status") or "UNKNOWN").upper()
+            n = s.get("payment_num")
+            if status in _BATCH_CANCELLED:
+                add("payment_run", f"in_cancelled_batch:{cid}", "blocking",
+                    f"Scheduled payment {n} is still tied to payment batch {label}, which was "
+                    f"cancelled ({status}); a new payment run cannot pick it up until it is "
+                    "released.", owner="Treasury / AP: release the payment from the cancelled batch")
+            else:
                 add("payment_run", f"in_payment_batch:{cid}", "warning",
-                    f"Scheduled payment {s.get('payment_num')} was selected into payment batch "
-                    f"{b.get('checkrun_name') or cid} (status {b.get('status') or 'unknown'}) "
-                    "and is still unpaid; the batch did not complete or was abandoned.",
-                    owner="Treasury / AP: review the batch in the payment manager")
+                    f"Scheduled payment {n} was selected into payment batch {label} "
+                    f"({_BATCH_STATUS.get(status, status)}) and is still unpaid.",
+                    owner="Treasury / AP: finish or cancel the batch in the payment manager")
+
+        # Nothing on the invoice blocks it, it is past due, and no batch has it:
+        # the usual "approved but never paid". The cause is outside the invoice
+        # (what the payment run selects), so say that rather than invent one.
+        overdue = [d for d in (_as_date(s.get("due_date")) for s in open_schedules) if d and d < now.date()]
+        if (validated and overdue and not findings_blocking(findings)
+                and not any(f["stage"] == "payment_run" for f in findings)):
+            days = (now.date() - min(overdue)).days
+            add("payment_run", "overdue_unpaid", "warning",
+                f"Ready to pay and {days} day(s) overdue (due {min(overdue)}), with nothing on the "
+                "invoice blocking it, but no payment run has paid it. Check what the payment run "
+                "selects: pay group, payment method, due-date range and the supplier's payment "
+                "terms.", owner="AP: review the payment run's selection criteria", days=days)
 
     # ── stage 7: accounting ──────────────────────────────────────────────────
     if validated and accounting is not None:
+        if not accounting:
+            add("accounting", "no_accounting_events", "warning",
+                "The invoice is validated but has no Subledger Accounting events: it has not "
+                "been accounted, or this account cannot see Subledger Accounting data.",
+                owner="Accountant: run Create Accounting, or check the account's access to XLA")
         pending = False
         for ev in accounting:
             ev_status = (ev.get("event_status_code") or "").upper()
@@ -494,6 +550,8 @@ def _result(findings, header, errors, now, *, created, terminal=False,
             status = "not_applicable"
         elif key == "import" and created and not here:
             status = "not_applicable"
+        elif not created and key != "import":
+            status = "not_applicable"   # no invoice exists, so nothing later can be judged
         elif failed:
             status = "not_checked"
         elif any(f["severity"] == "blocking" for f in here):
@@ -512,6 +570,7 @@ def _result(findings, header, errors, now, *, created, terminal=False,
         stages.append(entry)
 
     not_checked = [s["label"] for s in stages if s["status"] == "not_checked"]
+    warnings = [f for f in findings if f["severity"] == "warning"]
     if not created and primary:
         verdict = f"Stuck at {primary['stage_label']}: {primary['message']}"
     elif not created:
@@ -526,16 +585,15 @@ def _result(findings, header, errors, now, *, created, terminal=False,
             verdict += f" Next: {primary['owner']}."
     elif any(f["code"] == "not_yet_due" for f in findings):
         verdict = next(f["message"] for f in findings if f["code"] == "not_yet_due")
-    elif paid_in_full and not any(f["severity"] == "warning" for f in findings):
-        verdict = "Not stuck: the invoice is paid" + (
-            "." if not not_checked else f", but these stages could not be checked: "
-            + ", ".join(not_checked) + ".")
-    elif any(f["severity"] == "warning" for f in findings):
-        verdict = "No hard blocker, but needs attention: " + findings_first_warning(findings)
+    elif warnings:
+        verdict = "No hard blocker, but needs attention: " + warnings[0]["message"]
+    elif paid_in_full:
+        verdict = "Not stuck: the invoice is paid."
     else:
         verdict = "No blocker found by the checks that ran."
-        if not_checked:
-            verdict += " These stages could not be checked: " + ", ".join(not_checked) + "."
+    # A stage that could not run is never silently dropped from the answer.
+    if not_checked and not terminal and not primary:
+        verdict += " These stages could not be checked: " + ", ".join(not_checked) + "."
 
     return {
         "stuck": primary is not None,
@@ -545,10 +603,6 @@ def _result(findings, header, errors, now, *, created, terminal=False,
         "stages": stages,
         "findings": findings,
     }
-
-
-def findings_first_warning(findings: list[dict]) -> str:
-    return next(f["message"] for f in findings if f["severity"] == "warning")
 
 
 # ── the tool ─────────────────────────────────────────────────────────────────

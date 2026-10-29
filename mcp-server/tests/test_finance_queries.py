@@ -86,6 +86,15 @@ def test_ap_validation_is_read_from_distributions_not_lines():
     assert "AP_INVOICE_DISTRIBUTIONS_ALL" in sql and "AP_INVOICE_LINES_ALL" not in sql
 
 
+def test_ap_rejections_cover_header_and_line_level_and_count_both():
+    sql, _ = ap.build_interface_rejections_query(ORGS)
+    assert "UNION ALL" in sql and "AP_INVOICE_LINES_INTERFACE" in sql
+    assert "'HEADER' AS reject_level" in sql and "'LINE' AS reject_level" in sql
+    # the window runs over the union, so total_count counts header and line rows together
+    assert sql.startswith("SELECT u.*, COUNT(*) OVER () AS total_count FROM (")
+    assert sql.count("aii.status = 'REJECTED'") == 2
+
+
 def test_ap_holds_read_only_unreleased_holds_on_live_invoices():
     sql, binds = ap.build_holds_query(ORGS, "qty rec", None)
     assert "ah.release_lookup_code IS NULL" in sql

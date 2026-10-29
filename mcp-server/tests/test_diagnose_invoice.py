@@ -29,13 +29,17 @@ HEADER = {"invoice_id": 11, "invoice_number": "INV-1", "org_id": 204, "vendor_id
           "creation_date": datetime(2026, 9, 1), "cancelled_date": None,
           "payment_status_flag": "N", "ledger_id": 1}
 
+TRANSFERRED = [{"event_type_code": "INVOICE VALIDATED", "event_status_code": "P",
+                "process_status_code": "P", "gl_transfer_status_code": "Y", "event_date": datetime(2026, 9, 2)}]
+
 CLEAN = dict(
+    accounting=TRANSFERRED,
     interface=[], distributions=[{"flag": "A", "n": 2}], holds=[], approval=[{"status": "APPROVED", "n": 2}],
     supplier=[{"supplier_enabled": "Y", "supplier_end_date": None, "supplier_hold_all_payments": "N",
                "site_inactive_date": None, "site_hold_all_payments": "N"}],
     schedules=[{"payment_num": 1, "due_date": datetime(2026, 9, 30), "amount_remaining": 100,
                 "hold_flag": "N", "payment_method_code": "CHECK", "checkrun_id": None}],
-    batches=[], accounting=[], period=[{"period_name": "SEP-26", "closing_status": "O"}], errors={},
+    batches=[], period=[{"period_name": "SEP-26", "closing_status": "O"}], errors={},
 )
 
 
@@ -45,7 +49,9 @@ def diagnose(header=HEADER, **over):
 
 
 def codes(r):
-    return [f["code"] for f in r["findings"]]
+    """Finding codes, ignoring the overdue note that the fixture's past-due
+    schedule (due 2026-09-30) raises in every otherwise-clean case."""
+    return [f["code"] for f in r["findings"] if f["code"] != "overdue_unpaid"]
 
 
 def stage_status(r):
@@ -90,7 +96,9 @@ def test_followup_queries_are_keyed_by_the_invoice_not_by_org_scope():
 
 
 def test_a_healthy_waiting_invoice_is_not_stuck():
-    r = diagnose(schedules=[{**CLEAN["schedules"][0], "due_date": datetime(2026, 11, 30)}])
+    r = diagnose(schedules=[{**CLEAN["schedules"][0], "due_date": datetime(2026, 11, 30)}],
+                 accounting=[{"event_type_code": "X", "event_status_code": "P", "process_status_code": "P",
+                              "gl_transfer_status_code": "Y", "event_date": NOW}])
     assert not r["stuck"] and r["blocking_stage"] is None
     assert "Waiting, not stuck" in r["verdict"] and "2026-11-30" in r["verdict"]
     assert stage_status(r)["payment_eligibility"] == "waiting"
@@ -102,6 +110,33 @@ def test_import_rejected_when_the_invoice_never_got_created():
     r = diagnose(None, interface=rows)
     assert r["stuck"] and r["blocking_stage"] == "import"
     assert "Invoice number already exists" in r["verdict"]
+
+
+def test_line_level_rejections_are_named_and_later_stages_are_not_judged():
+    rows = [{"status": "REJECTED", "reject_code": "ACCT DATE NOT IN OPEN PD", "reject_level": "LINE",
+             "reject_reason": "Accounting date is not in an open period", "creation_date": datetime(2026, 10, 1)},
+            {"status": "REJECTED", "reject_code": "ACCT DATE NOT IN OPEN PD", "reject_level": "LINE",
+             "reject_reason": "Accounting date is not in an open period", "creation_date": datetime(2026, 10, 1)}]
+    r = diagnose(None, interface=rows)
+    assert r["findings"][0]["message"].count("not in an open period") == 1   # de-duplicated
+    assert "(on the invoice lines)" in r["verdict"]
+    st = stage_status(r)
+    assert st["import"] == "blocked"
+    assert all(v == "not_applicable" for k, v in st.items() if k != "import")
+
+
+def test_a_rejected_row_with_no_recorded_reason_says_so():
+    r = diagnose(None, interface=[{"status": "REJECTED", "reject_code": None, "reject_reason": None,
+                                   "creation_date": datetime(2026, 10, 1)}])
+    assert "reason not recorded" in r["verdict"]
+
+
+def test_interface_query_covers_header_and_line_rejections():
+    sql, binds = di.build_interface_query(ORGS, "INV-1")
+    validate_sql_conventions(sql)
+    assert "UNION ALL" in sql and "AP_INVOICE_LINES_INTERFACE" in sql
+    assert sql.count(":invoice_number") == 2 and binds["invoice_number"] == "INV-1"
+    assert "FETCH FIRST 50 ROWS ONLY" in sql
 
 
 def test_import_not_yet_processed():
@@ -157,8 +192,39 @@ def test_selected_into_a_payment_batch_that_did_not_finish():
     s = {**CLEAN["schedules"][0], "checkrun_id": 77}
     r = diagnose(schedules=[s], batches=[{"checkrun_id": 77, "checkrun_name": "QUICK-77", "status": "SELECTED"}])
     f = [x for x in r["findings"] if x["stage"] == "payment_run"][0]
-    assert f["severity"] == "warning" and "QUICK-77" in f["message"] and "SELECTED" in f["message"]
+    assert f["severity"] == "warning" and "QUICK-77" in f["message"]
+    assert "selected but not yet built" in f["message"]
     assert "needs attention" in r["verdict"]
+
+
+@pytest.mark.parametrize("status", ["CANCELED", "CANCELING", "CANCELLED NO PAYMENTS"])
+def test_an_invoice_still_tied_to_a_cancelled_batch_is_blocked(status):
+    s = {**CLEAN["schedules"][0], "checkrun_id": 77}
+    r = diagnose(schedules=[s], batches=[{"checkrun_id": 77, "checkrun_name": "B", "status": status}],
+                 accounting=[{"event_type_code": "X", "event_status_code": "P", "process_status_code": "P",
+                              "gl_transfer_status_code": "Y", "event_date": NOW}])
+    assert r["blocking_stage"] == "payment_run" and codes(r) == ["in_cancelled_batch:77"]
+
+
+def test_ready_overdue_with_nothing_blocking_is_called_out_not_called_clear():
+    ev = [{"event_type_code": "X", "event_status_code": "P", "process_status_code": "P",
+           "gl_transfer_status_code": "Y", "event_date": NOW}]
+    r = diagnose(accounting=ev)   # CLEAN schedule fell due 2026-09-30
+    assert not r["stuck"] and [f["code"] for f in r["findings"]] == ["overdue_unpaid"]
+    assert "27 day(s) overdue" in r["findings"][0]["message"]
+    assert r["verdict"].startswith("No hard blocker, but needs attention")
+
+
+def test_overdue_is_not_reported_when_something_else_blocks():
+    r = diagnose(holds=[{"hold_code": "PRICE", "hold_reason": "x", "days_on_hold": 1}])
+    assert "overdue_unpaid" not in codes(r)
+
+
+def test_validated_invoice_with_no_accounting_events_is_not_called_clear():
+    r = diagnose(accounting=[])
+    assert "no_accounting_events" in codes(r)
+    f = [x for x in r["findings"] if x["code"] == "no_accounting_events"][0]
+    assert f["severity"] == "warning" and "cannot see Subledger Accounting" in f["message"]
 
 
 def test_accounting_error_blocks_and_closed_period_is_named():
