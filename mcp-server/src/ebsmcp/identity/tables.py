@@ -73,3 +73,26 @@ identity_mapping_sensitive_grants = Table(
     ),
     Column("field_class", String(40), nullable=False),
 )
+
+
+# Group-access gate (policy/group_gate.py reads these two). Same duplication
+# rationale as the tables above; keep in sync with identity-service.
+entra_registrations = Table(
+    "entra_registrations",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("environment", String(10), nullable=False),
+    Column("enforce_group_access", Boolean, nullable=False, server_default=false()),
+    Column("groups_claim", String(60), nullable=False, server_default="groups"),
+)
+
+entra_group_access = Table(
+    "entra_group_access",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("environment", String(10), nullable=False),
+    Column("group_object_id", String(64), nullable=False),
+    Column("channel", String(12), nullable=False),
+    Column("allowed_domains", String(200), nullable=False),
+    Column("effective_end_date", TZDateTime, nullable=True),
+)

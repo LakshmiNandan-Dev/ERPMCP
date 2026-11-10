@@ -84,6 +84,8 @@ export interface EntraRegistration {
   audience: string;
   subject_claim: string;
   resource_server_url: string;
+  enforce_group_access: boolean;
+  groups_claim: string;
   created_at: string;
   created_by: string;
   updated_at: string | null;
@@ -95,6 +97,34 @@ export interface EntraRegistrationInput {
   audience: string;
   subject_claim: string;
   resource_server_url: string;
+  // Omitted means "leave as it is": saving the tenant fields must never flip
+  // group enforcement by omission.
+  enforce_group_access?: boolean;
+  groups_claim?: string;
+}
+
+export type GroupChannel = "chat_agent" | "mcp_direct" | "any";
+
+export interface EntraGroup {
+  id: number;
+  environment: Environment;
+  group_object_id: string;
+  group_name: string;
+  channel: GroupChannel;
+  allowed_domains: string[];
+  effective_start_date: string;
+  effective_end_date: string | null;
+  created_at: string;
+  created_by: string;
+  updated_at: string | null;
+  updated_by: string | null;
+}
+
+export interface EntraGroupInput {
+  group_object_id: string;
+  group_name: string;
+  channel: GroupChannel;
+  allowed_domains: string[];
 }
 
 export interface AuditLogEntry {

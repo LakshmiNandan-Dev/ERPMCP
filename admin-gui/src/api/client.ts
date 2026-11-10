@@ -6,6 +6,8 @@ import type {
   AssignedResponsibility,
   AuditLogEntry,
   Environment,
+  EntraGroup,
+  EntraGroupInput,
   EntraRegistration,
   EntraRegistrationInput,
   IdentityMapping,
@@ -146,6 +148,24 @@ export function putEntraConfig(environment: Environment, body: EntraRegistration
     method: "PUT",
     body: JSON.stringify(body),
   });
+}
+
+export function listEntraGroups(environment: Environment, includeClosed = false): Promise<EntraGroup[]> {
+  return request(`/entra-groups/${environment}?include_closed=${includeClosed}`);
+}
+
+export function addEntraGroup(environment: Environment, body: EntraGroupInput): Promise<EntraGroup> {
+  return request(`/entra-groups/${environment}`, { method: "POST", body: JSON.stringify(body) });
+}
+
+export function closeEntraGroup(environment: Environment, id: number): Promise<EntraGroup> {
+  return request(`/entra-groups/${environment}/${id}/close`, { method: "POST" });
+}
+
+// The domains a group may be limited to ("dba" is the DBA toolset).
+export async function getGroupDomains(): Promise<string[]> {
+  const r = await request<{ domains: string[] }>("/entra-groups/domains");
+  return r.domains;
 }
 
 export interface LoginResponse {

@@ -54,6 +54,11 @@ VALID_ENVIRONMENTS = ("dev", "test", "uat", "prod")
 # customers never get direct-DB DBA-style access to it.
 VALID_TARGET_SYSTEMS = ("ebs", "fusion", "ebs_dba")
 VALID_RESOLUTION_SOURCES = ("resolved_from_source", "manually_overridden")
+# How a caller reaches the tools. chat_agent is the in-process chat agent
+# (the host authenticates the user and asserts who they are and which groups
+# they belong to); mcp_direct is an MCP client presenting an Entra bearer
+# token. A group grant names one channel, or "any".
+VALID_GROUP_CHANNELS = ("chat_agent", "mcp_direct", "any")
 # How much of the HR population an hcm mapping may see. "self" is the caller's
 # own record, "reports" adds their direct and indirect reports through the
 # supervisor hierarchy, "all" is a deliberate admin grant for HR specialists.
@@ -333,6 +338,15 @@ entra_registrations = Table(
     Column("audience", String(120), nullable=False),
     Column("subject_claim", String(60), nullable=False, server_default="preferred_username"),
     Column("resource_server_url", String(500), nullable=False),
+    # Group-based access gate. false (the default, and every pre-existing
+    # row's value) means "no group check" — behaviour is exactly what it was
+    # before this column existed. true means a caller must belong to an
+    # entra_group_access group granted for their channel, and is denied if
+    # their groups cannot be determined at all (fail closed).
+    Column("enforce_group_access", Boolean, nullable=False, server_default=false()),
+    # Which token claim carries the caller's group object IDs. "groups" is
+    # Entra's default; a tenant that emits it under another name says so here.
+    Column("groups_claim", String(60), nullable=False, server_default="groups"),
     Column("created_at", TZDateTime, nullable=False, server_default=func.now()),
     Column("created_by", String(320), nullable=False),
     Column("updated_at", TZDateTime, nullable=True, onupdate=func.now()),
@@ -342,6 +356,70 @@ entra_registrations = Table(
         name="ck_entra_registrations_environment",
     ),
     UniqueConstraint("environment", name="ux_entra_registrations_one_per_environment"),
+)
+
+# Which Entra / Active Directory groups may use the tools, per environment.
+# A grant is "members of this group may use the tools via this channel,
+# limited to these domains". Only consulted when the environment's
+# entra_registrations.enforce_group_access is true.
+#
+# group_object_id is the group's Entra object ID (a GUID) — what the token's
+# groups claim carries — never its display name, which is mutable and not
+# unique. group_name is an admin-typed label for the console only.
+#
+# allowed_domains is a comma-separated list from the domain vocabulary plus
+# "dba" (the DBA toolset), or the explicit "*" for all of them. Required, not
+# nullable: "no restriction" must be a visible choice, never what an empty
+# value happens to mean.
+#
+# Closed, never deleted: effective_end_date records when a grant ended, the
+# same convention as identity_mappings, so the history of who could reach
+# what stays auditable.
+entra_group_access = Table(
+    "entra_group_access",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("environment", String(10), nullable=False),
+    Column("group_object_id", String(64), nullable=False),
+    Column("group_name", String(200), nullable=False),
+    Column("channel", String(12), nullable=False),
+    Column("allowed_domains", String(200), nullable=False),
+    Column("effective_start_date", TZDateTime, nullable=False, server_default=func.now()),
+    Column("effective_end_date", TZDateTime, nullable=True),
+    Column("created_at", TZDateTime, nullable=False, server_default=func.now()),
+    Column("created_by", String(320), nullable=False),
+    Column("updated_at", TZDateTime, nullable=True, onupdate=func.now()),
+    Column("updated_by", String(320), nullable=True),
+    CheckConstraint(
+        f"environment IN {VALID_ENVIRONMENTS}",
+        name="ck_entra_group_access_environment",
+    ),
+    CheckConstraint(
+        f"channel IN {VALID_GROUP_CHANNELS}",
+        name="ck_entra_group_access_channel",
+    ),
+    CheckConstraint(
+        "effective_end_date IS NULL OR effective_end_date > effective_start_date",
+        name="ck_entra_group_access_date_order",
+    ),
+    # At most one open grant per (environment, group, channel): two open rows
+    # for the same group and channel would make "which domains" ambiguous.
+    Index(
+        "ux_entra_group_access_open",
+        "environment",
+        "group_object_id",
+        "channel",
+        unique=True,
+        postgresql_where=text("effective_end_date IS NULL"),
+    ).ddl_if(dialect="postgresql"),
+    Index(
+        "ux_entra_group_access_open",
+        text(
+            "(CASE WHEN effective_end_date IS NULL "
+            "THEN environment || ':' || group_object_id || ':' || channel END)"
+        ),
+        unique=True,
+    ).ddl_if(dialect="oracle"),
 )
 
 # Local admin accounts for admin-gui/management-api's own access control —

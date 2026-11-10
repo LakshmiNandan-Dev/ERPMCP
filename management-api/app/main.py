@@ -4,7 +4,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import load_settings
-from app.routers import audit_log, auth, branding, ebs_lookup, entra_config, identity_mappings
+from app.routers import (
+    audit_log,
+    auth,
+    branding,
+    ebs_lookup,
+    entra_config,
+    entra_groups,
+    identity_mappings,
+)
 
 app = FastAPI(title="EBSMCP Management API")
 
@@ -22,6 +30,7 @@ app.add_middleware(
 app.include_router(identity_mappings.router)
 app.include_router(audit_log.router)
 app.include_router(entra_config.router)
+app.include_router(entra_groups.router)
 app.include_router(ebs_lookup.router)
 app.include_router(auth.router)
 app.include_router(branding.router)

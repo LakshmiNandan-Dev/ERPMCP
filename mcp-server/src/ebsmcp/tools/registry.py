@@ -25,9 +25,16 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
 from ebsmcp.audit import AuditLogger
+from ebsmcp.context import get_injected_channel, get_injected_groups
 from ebsmcp.connectors.base import EBSConnector
-from ebsmcp.identity import SENSITIVE_DOMAINS, IdentityResolver, ResolvedIdentity, TargetSystem
-from ebsmcp.policy import EntitlementFilter
+from ebsmcp.identity import (
+    ANY_DOMAIN,
+    SENSITIVE_DOMAINS,
+    IdentityResolver,
+    ResolvedIdentity,
+    TargetSystem,
+)
+from ebsmcp.policy import EntitlementFilter, GroupGate
 
 
 @dataclass
@@ -44,6 +51,10 @@ class ToolContext:
     audit: AuditLogger
     environment: str
     dev_subject: str
+    # None means group access is not enforced anywhere (stdio, tests, a
+    # deployment with no identity database). When set, the gate itself still
+    # decides per environment whether enforcement is switched on.
+    group_gate: GroupGate | None = None
 
 
 @dataclass
@@ -55,6 +66,28 @@ class ToolSet:
 def mount_toolsets(app: MCPServer, ctx: ToolContext, toolsets: list[ToolSet]) -> None:
     for toolset in toolsets:
         toolset.register(app, ctx)
+
+
+def authorize_groups(
+    ctx: ToolContext,
+    *,
+    target_system: TargetSystem,
+    domains: tuple[str, ...] | None,
+) -> tuple[str, ...] | None:
+    """Apply the Entra group gate, if one is configured. Returns the domains
+    the identity resolver should be given (narrowed to what the caller's groups
+    allow), or raises GroupAccessDenied. Runs inside the audited block of every
+    entry point, so a denial leaves an audit record."""
+    if ctx.group_gate is None:
+        return domains
+    token = get_access_token()
+    return ctx.group_gate.authorize(
+        channel=get_injected_channel() or "mcp_direct",
+        claims=getattr(token, "claims", None) if token else None,
+        injected_groups=get_injected_groups(),
+        target_system=target_system,
+        domains=domains,
+    )
 
 
 def current_subject(ctx: ToolContext) -> str:
@@ -149,6 +182,7 @@ def resolve_identity_only(
         target_system=target_system,
         params=params,
     ):
+        authorize_groups(ctx, target_system=target_system, domains=ANY_DOMAIN)
         try:
             identity = ctx.identity_resolver.resolve(subject, target_system)
         except LookupError as exc:
@@ -221,6 +255,10 @@ def resolve_scoped_call(
             # Same dict object: the tool fills it in as the call proceeds and
             # the audit record picks up whatever it holds on the way out.
             outcome["security"] = security
+        # Before identity: a caller outside the allowed groups is refused
+        # whether or not they have a mapping, and an allowed one is held to
+        # the domains their groups grant.
+        domains = authorize_groups(ctx, target_system=target_system, domains=domains)
         try:
             identity = ctx.identity_resolver.resolve(subject, target_system, domains)
         except LookupError as exc:

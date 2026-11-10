@@ -94,6 +94,27 @@ entra_registrations = Table(
     Column("audience", String(120), nullable=False),
     Column("subject_claim", String(60), nullable=False),
     Column("resource_server_url", String(500), nullable=False),
+    Column("enforce_group_access", Boolean, nullable=False),
+    Column("groups_claim", String(60), nullable=False),
+    Column("created_at", TZDateTime, nullable=False),
+    Column("created_by", String(320), nullable=False),
+    Column("updated_at", TZDateTime, nullable=True),
+    Column("updated_by", String(320), nullable=True),
+)
+
+# See identity-service/db/models.py for what each column means and why a grant
+# is closed, never deleted.
+entra_group_access = Table(
+    "entra_group_access",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("environment", String(10), nullable=False),
+    Column("group_object_id", String(64), nullable=False),
+    Column("group_name", String(200), nullable=False),
+    Column("channel", String(12), nullable=False),
+    Column("allowed_domains", String(200), nullable=False),
+    Column("effective_start_date", TZDateTime, nullable=False),
+    Column("effective_end_date", TZDateTime, nullable=True),
     Column("created_at", TZDateTime, nullable=False),
     Column("created_by", String(320), nullable=False),
     Column("updated_at", TZDateTime, nullable=True),

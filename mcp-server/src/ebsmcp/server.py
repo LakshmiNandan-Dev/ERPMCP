@@ -28,7 +28,7 @@ from ebsmcp.config import Settings, load_settings
 from ebsmcp.connectors import MockEBSConnector, OracleEBSConnector, init_thick_mode_if_configured
 from ebsmcp.connectors.base import EBSConnector
 from ebsmcp.identity import IdentityResolver, PostgresIdentityResolver, ResolvedIdentity, StubIdentityResolver
-from ebsmcp.policy import EntitlementFilter
+from ebsmcp.policy import EntitlementFilter, GroupGate, PostgresGroupPolicySource
 from ebsmcp.tools import (
     ACCOUNTS_PAYABLE_TOOLSET,
     ACCOUNTS_RECEIVABLE_TOOLSET,
@@ -637,6 +637,18 @@ def build_identity_resolver(settings: Settings) -> IdentityResolver:
     )
 
 
+def build_group_gate(settings: Settings) -> GroupGate | None:
+    """The Entra group gate, read from the identity database the admin console
+    writes to. Without a real identity database there is nothing to enforce
+    against (the dev stub identities are unrestricted by design), so no gate."""
+    if not settings.has_real_identity_db:
+        return None
+    return GroupGate(
+        PostgresGroupPolicySource(db_url=settings.identity_db_url),  # type: ignore[arg-type]
+        environment=settings.environment,
+    )
+
+
 def build_transport_security(settings: Settings) -> TransportSecuritySettings:
     """DNS-rebinding protection for streamable-http. Both allowed_hosts and
     allowed_origins default to settings' own empty-list default, which
@@ -681,6 +693,7 @@ def build_app(settings: Settings) -> MCPServer:
         audit=audit,
         environment=settings.environment,
         dev_subject=settings.dev_identity_subject,
+        group_gate=build_group_gate(settings),
     )
 
     mount_toolsets(

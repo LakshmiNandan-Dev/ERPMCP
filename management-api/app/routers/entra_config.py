@@ -18,11 +18,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import insert, select
+from sqlalchemy import func, insert, select
 
 from app.db import identity_engine
 from app.deps import admin_subject
-from app.models.identity import entra_registrations
+from app.models.identity import entra_group_access, entra_registrations
 from app.schemas.entra_config import EntraRegistrationInput, EntraRegistrationOut
 from app.schemas.identity import Environment
 
@@ -52,6 +52,25 @@ def put_entra_config(
             select(entra_registrations.c.id).where(entra_registrations.c.environment == environment)
         ).scalar_one_or_none()
 
+        # Turning group enforcement on with nothing granted would deny every
+        # user the moment it is saved. Refuse it here, where the admin can
+        # act on the message, rather than discovering it as a global outage.
+        if body.enforce_group_access:
+            open_groups = conn.execute(
+                select(func.count())
+                .select_from(entra_group_access)
+                .where(entra_group_access.c.environment == environment)
+                .where(entra_group_access.c.effective_end_date.is_(None))
+            ).scalar_one()
+            if open_groups == 0:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "Cannot turn on group enforcement: no Entra group is granted for "
+                        f"{environment!r}, so every user would be denied. Add a group first."
+                    ),
+                )
+
         if existing_id is None:
             conn.execute(
                 insert(entra_registrations).values(
@@ -60,10 +79,18 @@ def put_entra_config(
                     audience=body.audience,
                     subject_claim=body.subject_claim,
                     resource_server_url=body.resource_server_url,
+                    enforce_group_access=bool(body.enforce_group_access),
+                    groups_claim=body.groups_claim or "groups",
                     created_by=subject,
                 )
             )
         else:
+            # None means "not supplied": keep what is stored, never reset it.
+            optional = {}
+            if body.enforce_group_access is not None:
+                optional["enforce_group_access"] = body.enforce_group_access
+            if body.groups_claim is not None:
+                optional["groups_claim"] = body.groups_claim
             # updated_at set explicitly — see identity_mappings.py's
             # close_identity_mapping for why onupdate= isn't relied on here.
             conn.execute(
@@ -76,6 +103,7 @@ def put_entra_config(
                     resource_server_url=body.resource_server_url,
                     updated_at=datetime.now(timezone.utc),
                     updated_by=subject,
+                    **optional,
                 )
             )
 

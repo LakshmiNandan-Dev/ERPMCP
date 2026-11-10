@@ -4,11 +4,12 @@ import { getBranding } from "./api/client";
 import { AdminSubjectBar } from "./components/AdminSubjectBar";
 import { AuditLog } from "./components/AuditLog";
 import { BrandingSettings } from "./components/BrandingSettings";
+import { EntraGroups } from "./components/EntraGroups";
 import { EntraSettings } from "./components/EntraSettings";
 import { IdentityMappings } from "./components/IdentityMappings";
 import type { Branding } from "./types";
 
-type Tab = "mappings" | "audit" | "settings" | "branding";
+type Tab = "mappings" | "groups" | "audit" | "settings" | "branding";
 
 const DEFAULT_TITLE = "EBSMCP Admin";
 
@@ -58,6 +59,9 @@ function App() {
         <button className={tab === "mappings" ? "tab active" : "tab"} onClick={() => setTab("mappings")}>
           Identity mappings
         </button>
+        <button className={tab === "groups" ? "tab active" : "tab"} onClick={() => setTab("groups")}>
+          Group access
+        </button>
         <button className={tab === "audit" ? "tab active" : "tab"} onClick={() => setTab("audit")}>
           Audit log
         </button>
@@ -71,6 +75,7 @@ function App() {
 
       <main>
         {tab === "mappings" && <IdentityMappings />}
+        {tab === "groups" && <EntraGroups />}
         {tab === "audit" && <AuditLog />}
         {tab === "settings" && <EntraSettings />}
         {tab === "branding" && <BrandingSettings />}
